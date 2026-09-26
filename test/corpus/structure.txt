@@ -1,0 +1,197 @@
+==================
+Comment, blank line and negated pattern
+==================
+# files
+
+!foo/
+
+---
+
+(document (comment (comment_marker) (comment_text) (line_ending)) (blank_line (line_ending)) (pattern negation: (negation) (glob_literal) (path_separator) (line_ending)))
+
+==================
+Recursive wildcard and ordinary glob atoms
+==================
+**/a/**/b/**
+***a?\*
+
+---
+
+(document (pattern (recursive_wildcard) (path_separator) (glob_literal) (path_separator) (recursive_wildcard) (path_separator) (glob_literal) (path_separator) (recursive_wildcard) (line_ending)) (pattern (wildcard) (glob_literal) (single_character) (escape) (line_ending)))
+
+==================
+Negated set owns ranges and classes
+==================
+[!a-z[:digit:]]
+---
+
+(document (pattern (character_set opening: (set_open) negation: (set_negation) (character_range lower: (range_character) (range_operator) upper: (range_character)) (character_class name: (class_name)) closing: (set_close))))
+
+==================
+Set text and escapes
+==================
+[ab\]cd]
+---
+
+(document (pattern (character_set opening: (set_open) (set_text) (escape) (set_text) closing: (set_close))))
+
+==================
+Dot bracket notation uses ordinary set boundaries
+==================
+[[.a.]-[.z.]]
+---
+
+(document
+  (pattern
+    (character_set
+      opening: (set_open)
+      (set_text)
+      closing: (set_close))
+    (glob_literal)
+    (character_set
+      opening: (set_open)
+      (set_text)
+      closing: (set_close))
+    (glob_literal)))
+
+==================
+Equals inside brackets remain set text
+==================
+[[=a=]]
+---
+
+(document
+  (pattern
+    (character_set
+      opening: (set_open)
+      (set_text)
+      closing: (set_close))
+    (glob_literal)))
+
+==================
+Unclosed set retains text and reports its missing close
+==================
+a[bc*
+---
+
+(document
+  (pattern
+    (glob_literal)
+    (character_set
+      (set_open)
+      (set_text)
+      (syntax_issue
+        (incomplete_syntax
+          (missing_set_close))))))
+
+==================
+Leading close without a set terminator is incomplete
+==================
+[]
+---
+
+(document
+  (pattern
+    (character_set
+      (set_open)
+      (set_text)
+      (syntax_issue
+        (incomplete_syntax
+          (missing_set_close))))))
+
+==================
+Incomplete escape at EOF
+==================
+a\
+---
+
+(document (pattern (glob_literal) issue: (syntax_issue (incomplete_syntax (incomplete_escape)))))
+
+==================
+Invalid escape preserves the next line
+==================
+a\
+next
+
+---
+
+(document (pattern (glob_literal) issue: (syntax_issue (invalid_syntax (incomplete_escape))) (line_ending)) (pattern (glob_literal) (line_ending)))
+
+==================
+Classes inside an incomplete outer set preserve their owners
+==================
+[[:x:][[:y:][
+---
+
+(document
+  (pattern
+    (character_set
+      opening: (set_open)
+      (character_class
+        name: (class_name))
+      (set_text)
+      (character_class
+        name: (class_name))
+      (set_text)
+      issue: (syntax_issue
+        (incomplete_syntax
+          (missing_set_close))))))
+
+==================
+Caret negates a character set
+==================
+[^a]
+---
+
+(document
+  (pattern
+    (character_set
+      opening: (set_open)
+      negation: (set_negation)
+      (set_text)
+      closing: (set_close))))
+
+==================
+Range upper bracket prevents a character class
+==================
+[a-[:digit:]]
+---
+
+(document
+  (pattern
+    (character_set
+      opening: (set_open)
+      (character_range
+        lower: (range_character)
+        (range_operator)
+        upper: (range_character))
+      (set_text)
+      closing: (set_close))
+    (glob_literal)))
+
+==================
+Trailing spaces do not complete an unclosed set at EOF
+==================
+[abc  
+---
+
+(document
+  (pattern
+    (character_set
+      opening: (set_open)
+      (set_text)
+      issue: (syntax_issue
+        (incomplete_syntax
+          (missing_set_close))))
+    (trailing_space)))
+
+==================
+Empty class has delimiters without a synthetic name
+==================
+[[::]]
+---
+
+(document (pattern (character_set
+        opening: (set_open)
+        (character_class)
+        closing: (set_close))))
