@@ -46,18 +46,20 @@ enum Token {
 #define NONE UINT32_MAX
 
 // Positions count characters from the current line start. Zero-width start
-// tokens save lookahead decisions before their source is consumed.
+// tokens save lookahead decisions before their source is consumed. Every
+// field is a uint32_t so the serialized state has no padding.
 typedef struct {
   uint32_t position, content_end, line_end, ignored_start, kind;
   uint32_t next, next_end;
   uint32_t set_end, class_start, class_end;
   uint32_t lower_end, range_end;
-  bool component_start, after_separator, line_eof;
+  uint32_t component_start, after_separator, line_eof;
 } Scanner;
 
 typedef char scanner_fits_buffer
   [sizeof(Scanner) <= TREE_SITTER_SERIALIZATION_BUFFER_SIZE ? 1 : -1];
 
+// Lookahead that is not committed to the state.
 typedef struct {
   TSLexer *lexer;
   uint32_t position;
@@ -92,6 +94,11 @@ static uint32_t content_limit(const Scanner *s) {
   return s->ignored_start < s->line_end ? s->ignored_start : s->line_end;
 }
 
+static void advance(Scanner *s, TSLexer *lexer) {
+  lexer->advance(lexer, false);
+  s->position++;
+}
+
 static void step(Cursor *c) {
   c->lexer->advance(c->lexer, false);
   c->position++;
@@ -108,10 +115,8 @@ static bool consume(
   enum Token token,
   uint32_t end
 ) {
-  Cursor c = {lexer, s->position};
-  while (c.position < end)
-    step(&c);
-  s->position = c.position;
+  while (s->position < end)
+    advance(s, lexer);
   lexer->mark_end(lexer);
   return emit(lexer, valid, token);
 }
@@ -125,10 +130,8 @@ static bool text_run(
 ) {
   if (lexer->lookahead == -1)
     return consume(s, lexer, valid, INVALID_ENCODING, s->position + 1);
-  Cursor c = {lexer, s->position};
-  while (c.position < end && lexer->lookahead != -1)
-    step(&c);
-  s->position = c.position;
+  while (s->position < end && lexer->lookahead != -1)
+    advance(s, lexer);
   lexer->mark_end(lexer);
   return emit(lexer, valid, token);
 }
@@ -137,39 +140,37 @@ static bool text_run(
 static bool start_line(Scanner *s, TSLexer *lexer, const bool *valid) {
   if (lexer->eof(lexer))
     return false;
-  Scanner line;
-  memset(&line, 0, sizeof(line));
-  line.ignored_start = NONE;
+  memset(s, 0, sizeof(*s));
+  s->ignored_start = NONE;
+  s->class_start = NONE;
+  s->component_start = true;
+  s->kind = lexer->lookahead == '#' ? COMMENT_START : PATTERN_START;
   bool escaped = false;
   int32_t last = 0;
   uint32_t before_last = 0;
-  line.kind = lexer->lookahead == '#' ? COMMENT_START : PATTERN_START;
   lexer->mark_end(lexer);
-  Cursor c = {lexer, 0};
   while (!lexer->eof(lexer) && lexer->lookahead != '\n') {
     last = lexer->lookahead;
-    before_last = line.content_end;
-    if (last == 0 && line.ignored_start == NONE)
-      line.ignored_start = c.position;
-    if (line.ignored_start == NONE && (last != ' ' || escaped))
-      line.content_end = c.position + 1;
+    before_last = s->content_end;
+    if (last == 0 && s->ignored_start == NONE)
+      s->ignored_start = s->position;
+    if (s->ignored_start == NONE && (last != ' ' || escaped))
+      s->content_end = s->position + 1;
     escaped = !escaped && last == '\\';
-    step(&c);
+    advance(s, lexer);
   }
-  line.line_end = c.position;
-  line.line_eof = lexer->eof(lexer);
+  s->line_end = s->position;
+  s->line_eof = lexer->eof(lexer);
   if (last == '\r') {
-    line.line_end--;
-    line.content_end = before_last;
+    s->line_end--;
+    s->content_end = before_last;
   }
-  if (line.kind == COMMENT_START)
-    line.content_end = content_limit(&line);
-  else if (line.content_end == 0)
-    line.kind = BLANK_START;
-  line.class_start = NONE;
-  line.component_start = true;
-  *s = line;
-  return emit(lexer, valid, (enum Token)line.kind);
+  if (s->kind == COMMENT_START)
+    s->content_end = content_limit(s);
+  else if (s->content_end == 0)
+    s->kind = BLANK_START;
+  s->position = 0;
+  return emit(lexer, valid, (enum Token)s->kind);
 }
 
 static bool
@@ -381,10 +382,9 @@ static bool class_piece(Scanner *s, TSLexer *lexer, const bool *valid) {
   if (valid[CLASS_OPEN])
     return consume(s, lexer, valid, CLASS_OPEN, s->position + 1);
   if (s->position == s->class_end - 1) {
-    Cursor c = {lexer, s->position};
-    step(&c);
-    s->position = c.position;
+    advance(s, lexer);
     lexer->mark_end(lexer);
+    Cursor c = {lexer, s->position};
     if (!next_class(&c, s->set_end, false, &s->class_start, &s->class_end))
       s->class_start = NONE;
     return emit(lexer, valid, COMPOUND_CLOSE);
