@@ -9,6 +9,8 @@ import { issues, leaves, owners, parse } from "./support/parser.js";
 
 test("gitignore: public issue nodes have one outcome and one reason leaf", () => {
   const issue = nodeTypes.find(({ type }) => type === "syntax_issue");
+  assert.ok(issue);
+  assert.ok(issue.children);
   assert.equal(issue.children.required, true);
   assert.equal(issue.children.multiple, false);
   assert.deepEqual(
@@ -17,10 +19,13 @@ test("gitignore: public issue nodes have one outcome and one reason leaf", () =>
   );
   for (const { type } of issue.children.types) {
     const outcome = nodeTypes.find((node) => node.type === type);
+    assert.ok(outcome, type);
+    assert.ok(outcome.children, type);
     assert.equal(outcome.children.required, true);
     assert.equal(outcome.children.multiple, false);
     for (const child of outcome.children.types) {
       const reason = nodeTypes.find((node) => node.type === child.type);
+      assert.ok(reason, child.type);
       assert.equal(reason.children, undefined);
     }
   }
@@ -739,6 +744,81 @@ const invalidCases = [
     [["invalid_syntax", "invalid_encoding", 2, 3]],
     ["character_set"],
   ],
+  [
+    "consecutive decode failures form one pattern issue",
+    Buffer.from([97, 255, 254, 128, 98]),
+    [["invalid_syntax", "invalid_encoding", 1, 4]],
+    ["pattern"],
+  ],
+  [
+    "consecutive decode failures stop before the comment line ending",
+    Buffer.from([35, 255, 254, 13, 10, 97]),
+    [["invalid_syntax", "invalid_encoding", 1, 3]],
+    ["comment"],
+  ],
+  [
+    "consecutive decode failures stop before the set close",
+    Buffer.from([91, 97, 255, 254, 93]),
+    [["invalid_syntax", "invalid_encoding", 2, 4]],
+    ["character_set"],
+  ],
+  [
+    "consecutive decode failures stop before the class close",
+    Buffer.from([91, 91, 58, 100, 255, 254, 58, 93, 93]),
+    [["invalid_syntax", "invalid_encoding", 4, 6]],
+    ["character_class"],
+  ],
+  [
+    "consecutive decode failures in an ignored suffix remain one issue",
+    Buffer.from([97, 0, 255, 254, 98]),
+    [["invalid_syntax", "invalid_encoding", 2, 4]],
+    ["ignored_suffix"],
+  ],
+  [
+    "a backslash before consecutive decode failures adds no escape issue",
+    Buffer.from([92, 255, 254, 98]),
+    [["invalid_syntax", "invalid_encoding", 1, 3]],
+    ["pattern"],
+  ],
+  [
+    "a set backslash before consecutive decode failures adds no escape issue",
+    Buffer.from([91, 92, 255, 254, 93]),
+    [["invalid_syntax", "invalid_encoding", 2, 4]],
+    ["character_set"],
+  ],
+  [
+    "a truncated UTF-8 sequence at EOF is an invalid encoding run",
+    Buffer.from([97, 226, 130]),
+    [["invalid_syntax", "invalid_encoding", 1, 3]],
+    ["pattern"],
+  ],
+  [
+    "a decoded replacement character separates invalid encoding runs",
+    Buffer.from([255, 254, 239, 191, 189, 128, 129]),
+    [
+      ["invalid_syntax", "invalid_encoding", 0, 2],
+      ["invalid_syntax", "invalid_encoding", 5, 7],
+    ],
+    ["pattern", "pattern"],
+  ],
+  [
+    "NUL separates decode failures owned by a pattern and its ignored suffix",
+    Buffer.from([255, 254, 0, 128, 129]),
+    [
+      ["invalid_syntax", "invalid_encoding", 0, 2],
+      ["invalid_syntax", "invalid_encoding", 3, 5],
+    ],
+    ["pattern", "ignored_suffix"],
+  ],
+  [
+    "decode failures and a missing set close are independent at EOF",
+    Buffer.from([91, 255, 254]),
+    [
+      ["invalid_syntax", "invalid_encoding", 1, 3],
+      ["incomplete_syntax", "missing_set_close", 3, 3],
+    ],
+    ["character_set", "character_set"],
+  ],
 ];
 for (const [name, source, expected, owner] of invalidCases) {
   test(`gitignore: ${name}`, () => {
@@ -796,9 +876,11 @@ for (const [name, source, owner, expected] of compoundCases) {
         .map(({ kind, field, start, end }) => [kind, field, start, end]),
       expected,
     );
+    const last = expected.at(-1);
+    assert.ok(last);
     assert.deepEqual(
       [nodes[index].start, nodes[index].end],
-      [expected[0][2], expected.at(-1)[3]],
+      [expected[0][2], last[3]],
     );
   });
 }
@@ -809,6 +891,8 @@ test("gitignore: compound delimiters are anonymous and have no opening or closin
   }
   for (const type of ["character_class"]) {
     const node = nodeTypes.find((node) => node.type === type);
+    assert.ok(node, type);
+    assert.ok(node.fields, type);
     assert.deepEqual(Object.keys(node.fields), ["issue", "name"]);
   }
 });
@@ -836,51 +920,103 @@ test("gitignore: Git runtime checks the documented supplementary cases", (t) => 
     );
     assert.equal(run(["init", "--quiet"]).status, 0);
     const cases = [
-      [
-        "[a-[:digit:]]",
-        ["a", "1", "-", "a]", "d]", ":]", "1]"],
-        ["a]", "d]", ":]"],
-      ],
-      ["[A-[:digit:]]", ["A]", "Z]", "[]", "1"], ["A]", "Z]", "[]"]],
-      ["[]-[:digit:]]", ["]]", "d]", "1"], ["]]", "d]"]],
-      ["[a-b-[:digit:]]", ["a", "b", "-", "1", "d]"], ["a", "b", "-", "1"]],
-      ["[[:alpha:]A-[:digit:]]", ["a]", "Z]", "1"], ["a]", "Z]"]],
-      [
-        "[[:a-\\]-[:digit:]]",
-        ["1", "[", "a", "-", "1]", "d]"],
-        ["1", "[", "a", "-"],
-      ],
-      ["[\\A-[:digit:]]", ["A]", "Z]", "1"], ["A]", "Z]"]],
-      ["[A-\\[:digit:]]", ["A]", "Z]", "1"], ["A]", "Z]"]],
-      ["[[:]]", ["a", "[]", ":]"], ["[]", ":]"]],
-      ["[[::]]", ["a", "[]", ":]"], []],
-      ["[a[::]]", ["a", "[]", ":]"], []],
-      ["[![::]]", ["a", "[]", ":]"], []],
-      ["[[:unknown:]]", ["a", "[]", ":]"], []],
-      ["[a[:unknown:]]", ["a", "[]", ":]"], []],
-      ["[![:unknown:]]", ["a", "[]", ":]"], []],
-      ["a/***/b", ["a/b", "a/x/b", "a/x/y/b"], ["a/b", "a/x/b", "a/x/y/b"]],
-      ["a\rb", ["a", "ab", "a\rb"], ["a\rb"]],
-      ["a\r", ["a", "a\r"], ["a"], ""],
-      ["a\r\r", ["a", "a\r", "a\r\r"], ["a\r"], ""],
-      ["a \r", ["a", "a ", "a\r"], ["a"], ""],
-      ["a\r ", ["a", "a\r"], ["a\r"], ""],
-      ["a\0b", ["a", "ab", "b"], ["a"], ""],
-      ["a\r\0b", ["a", "a\r"], ["a\r"], ""],
-      ["a \0b", ["a", "a "], ["a"], ""],
-      ["\0a\nb", ["a", "b"], ["b"], ""],
-      ["[a\0]\nb", ["a", "b", "[a"], ["b"], ""],
-      ["a\0b\nc", ["a", "ab", "b", "c"], ["a", "c"], ""],
-      ["[^a]", ["a", "b", "^"], ["b", "^"]],
-      ["[a^]", ["a", "b", "^"], ["a", "^"]],
-      ["[[.a.]]", ["a", "a]", ".]"], ["a]", ".]"]],
-      ["[[=a=]]", ["a", "a]", "=]"], ["a]", "=]"]],
-      ["[[:digit]]", ["d", "d]", ":]"], ["d]", ":]"]],
-      ["[[:digit:]]", ["a", "1", "1]"], ["1"]],
-      ["[abc", ["a", "[abc"], []],
-      ["[]", ["]", "[]"], []],
+      {
+        pattern: "[a-[:digit:]]",
+        paths: ["a", "1", "-", "a]", "d]", ":]", "1]"],
+        expected: ["a]", "d]", ":]"],
+      },
+      {
+        pattern: "[A-[:digit:]]",
+        paths: ["A]", "Z]", "[]", "1"],
+        expected: ["A]", "Z]", "[]"],
+      },
+      {
+        pattern: "[]-[:digit:]]",
+        paths: ["]]", "d]", "1"],
+        expected: ["]]", "d]"],
+      },
+      {
+        pattern: "[a-b-[:digit:]]",
+        paths: ["a", "b", "-", "1", "d]"],
+        expected: ["a", "b", "-", "1"],
+      },
+      {
+        pattern: "[[:alpha:]A-[:digit:]]",
+        paths: ["a]", "Z]", "1"],
+        expected: ["a]", "Z]"],
+      },
+      {
+        pattern: "[[:a-\\]-[:digit:]]",
+        paths: ["1", "[", "a", "-", "1]", "d]"],
+        expected: ["1", "[", "a", "-"],
+      },
+      {
+        pattern: "[\\A-[:digit:]]",
+        paths: ["A]", "Z]", "1"],
+        expected: ["A]", "Z]"],
+      },
+      {
+        pattern: "[A-\\[:digit:]]",
+        paths: ["A]", "Z]", "1"],
+        expected: ["A]", "Z]"],
+      },
+      { pattern: "[[:]]", paths: ["a", "[]", ":]"], expected: ["[]", ":]"] },
+      { pattern: "[[::]]", paths: ["a", "[]", ":]"], expected: [] },
+      { pattern: "[a[::]]", paths: ["a", "[]", ":]"], expected: [] },
+      { pattern: "[![::]]", paths: ["a", "[]", ":]"], expected: [] },
+      { pattern: "[[:unknown:]]", paths: ["a", "[]", ":]"], expected: [] },
+      { pattern: "[a[:unknown:]]", paths: ["a", "[]", ":]"], expected: [] },
+      { pattern: "[![:unknown:]]", paths: ["a", "[]", ":]"], expected: [] },
+      {
+        pattern: "a/***/b",
+        paths: ["a/b", "a/x/b", "a/x/y/b"],
+        expected: ["a/b", "a/x/b", "a/x/y/b"],
+      },
+      { pattern: "a\rb", paths: ["a", "ab", "a\rb"], expected: ["a\rb"] },
+      { pattern: "a\r", paths: ["a", "a\r"], expected: ["a"], ending: "" },
+      {
+        pattern: "a\r\r",
+        paths: ["a", "a\r", "a\r\r"],
+        expected: ["a\r"],
+        ending: "",
+      },
+      {
+        pattern: "a \r",
+        paths: ["a", "a ", "a\r"],
+        expected: ["a"],
+        ending: "",
+      },
+      { pattern: "a\r ", paths: ["a", "a\r"], expected: ["a\r"], ending: "" },
+      { pattern: "a\0b", paths: ["a", "ab", "b"], expected: ["a"], ending: "" },
+      { pattern: "a\r\0b", paths: ["a", "a\r"], expected: ["a\r"], ending: "" },
+      { pattern: "a \0b", paths: ["a", "a "], expected: ["a"], ending: "" },
+      { pattern: "\0a\nb", paths: ["a", "b"], expected: ["b"], ending: "" },
+      {
+        pattern: "[a\0]\nb",
+        paths: ["a", "b", "[a"],
+        expected: ["b"],
+        ending: "",
+      },
+      {
+        pattern: "a\0b\nc",
+        paths: ["a", "ab", "b", "c"],
+        expected: ["a", "c"],
+        ending: "",
+      },
+      { pattern: "[^a]", paths: ["a", "b", "^"], expected: ["b", "^"] },
+      { pattern: "[a^]", paths: ["a", "b", "^"], expected: ["a", "^"] },
+      { pattern: "[[.a.]]", paths: ["a", "a]", ".]"], expected: ["a]", ".]"] },
+      { pattern: "[[=a=]]", paths: ["a", "a]", "=]"], expected: ["a]", "=]"] },
+      {
+        pattern: "[[:digit]]",
+        paths: ["d", "d]", ":]"],
+        expected: ["d]", ":]"],
+      },
+      { pattern: "[[:digit:]]", paths: ["a", "1", "1]"], expected: ["1"] },
+      { pattern: "[abc", paths: ["a", "[abc"], expected: [] },
+      { pattern: "[]", paths: ["]", "[]"], expected: [] },
     ];
-    for (const [pattern, paths, expected, ending = "\n"] of cases) {
+    for (const { pattern, paths, expected, ending = "\n" } of cases) {
       writeFileSync(join(directory, ".gitignore"), pattern + ending);
       const result = run(
         ["check-ignore", "--no-index", "-z", "--stdin"],

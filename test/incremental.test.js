@@ -1,151 +1,189 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyEdits, parse } from "./support/parser.js";
+import { applyEdits, issues, parse } from "./support/parser.js";
+
+for (const [owner, prefix, suffix] of [
+  ["pattern", "a", "b"],
+  ["comment", "# a", "b"],
+  ["set", "[a", "]"],
+  ["ignored suffix", "a\u0000", "b"],
+]) {
+  test(`gitignore: splitting the character after a decoding failure merges the issue in ${owner}`, () => {
+    const source = Buffer.concat([
+      Buffer.from(prefix),
+      Buffer.from([255]),
+      Buffer.from(`é${suffix}`),
+    ]);
+    const edits = [
+      { byte: Buffer.byteLength(prefix) + 2, deleteBytes: 1, insert: "" },
+    ];
+    const incremental = parse(source, edits);
+    assert.deepEqual(incremental, parse(applyEdits(source, edits)));
+    assert.deepEqual(
+      incremental
+        .filter(({ kind }) => kind === "syntax_issue")
+        .map(({ start, end }) => [start, end]),
+      [[Buffer.byteLength(prefix), Buffer.byteLength(prefix) + 2]],
+    );
+  });
+}
 
 const histories = [
-  [
-    "remove NUL and restore a set close",
-    "[a\0b]",
-    [{ byte: 2, deleteBytes: 1, insert: "" }],
-  ],
-  [
-    "split an ignored suffix into a new physical line",
-    "a\0*[b]",
-    [{ byte: 2, deleteBytes: 0, insert: "\n" }],
-  ],
-  [
-    "insert and remove a class name",
-    "[[::]]",
-    [
+  {
+    name: "remove NUL and restore a set close",
+    source: "[a\0b]",
+    edits: [{ byte: 2, deleteBytes: 1, insert: "" }],
+  },
+  {
+    name: "split an ignored suffix into a new physical line",
+    source: "a\0*[b]",
+    edits: [{ byte: 2, deleteBytes: 0, insert: "\n" }],
+  },
+  {
+    name: "insert and remove a class name",
+    source: "[[::]]",
+    edits: [
       { byte: 3, deleteBytes: 0, insert: "digit" },
       { byte: 3, deleteBytes: 5, insert: "" },
     ],
-  ],
-  [
-    "turn the EOF CR into an interior character",
-    "a\r",
-    [{ byte: 2, deleteBytes: 0, insert: "b" }],
-  ],
-  [
-    "turn the EOF CR into CRLF",
-    "a\r",
-    [{ byte: 2, deleteBytes: 0, insert: "\n" }],
-  ],
-  [
-    "turn an interior CR into the EOF suffix",
-    "a\rb",
-    [{ byte: 2, deleteBytes: 1, insert: "" }],
-  ],
-  [
-    "complete a set after trailing spaces and remove its close",
-    "[abc  ",
-    [
+  },
+  {
+    name: "turn the EOF CR into an interior character",
+    source: "a\r",
+    edits: [{ byte: 2, deleteBytes: 0, insert: "b" }],
+  },
+  {
+    name: "turn the EOF CR into CRLF",
+    source: "a\r",
+    edits: [{ byte: 2, deleteBytes: 0, insert: "\n" }],
+  },
+  {
+    name: "turn an interior CR into the EOF suffix",
+    source: "a\rb",
+    edits: [{ byte: 2, deleteBytes: 1, insert: "" }],
+  },
+  {
+    name: "complete a set after trailing spaces and remove its close",
+    source: "[abc  ",
+    edits: [
       { byte: 6, deleteBytes: 0, insert: "]" },
       { byte: 6, deleteBytes: 1, insert: "" },
     ],
-  ],
-  [
-    "terminate and reopen a set after trailing spaces",
-    "[abc  ",
-    [
+  },
+  {
+    name: "terminate and reopen a set after trailing spaces",
+    source: "[abc  ",
+    edits: [
       { byte: 6, deleteBytes: 0, insert: "\n" },
       { byte: 6, deleteBytes: 1, insert: "" },
     ],
-  ],
-  [
-    "change a class into a range upper bracket and back",
-    "[a[:digit:]]",
-    [
+  },
+  {
+    name: "change a class into a range upper bracket and back",
+    source: "[a[:digit:]]",
+    edits: [
       { byte: 2, deleteBytes: 0, insert: "-" },
       { byte: 2, deleteBytes: 1, insert: "" },
     ],
-  ],
-  [
-    "replace class delimiters with ordinary equal signs",
-    "[[:digit:]]",
-    [
+  },
+  {
+    name: "replace class delimiters with ordinary equal signs",
+    source: "[[:digit:]]",
+    edits: [
       { byte: 2, deleteBytes: 1, insert: "=" },
       { byte: 8, deleteBytes: 1, insert: "=" },
     ],
-  ],
-  [
-    "delete and restore a bracket inside a set",
-    "[[.a.]-[.z.]]",
-    [
+  },
+  {
+    name: "delete and restore a bracket inside a set",
+    source: "[[.a.]-[.z.]]",
+    edits: [
       { byte: 7, deleteBytes: 1, insert: "" },
       { byte: 7, deleteBytes: 0, insert: "[" },
     ],
-  ],
-  ["complete an escape", "a\\", [{ byte: 2, deleteBytes: 0, insert: "*" }]],
-  [
-    "end an incomplete escape line",
-    "a\\",
-    [{ byte: 2, deleteBytes: 0, insert: "\nnext" }],
-  ],
-  [
-    "complete an unclosed character set",
-    "[abc",
-    [{ byte: 4, deleteBytes: 0, insert: "]" }],
-  ],
-  ["reopen a set", "[abc]", [{ byte: 4, deleteBytes: 1, insert: "" }]],
-  [
-    "change a comment to a pattern",
-    "# abc",
-    [{ byte: 0, deleteBytes: 1, insert: "!" }],
-  ],
-  [
-    "insert negation before a recursive wildcard",
-    "**/a",
-    [{ byte: 0, deleteBytes: 0, insert: "!" }],
-  ],
-  [
-    "change an asterisk context",
-    "a**/",
-    [{ byte: 0, deleteBytes: 1, insert: "" }],
-  ],
-  [
-    "turn a range into literal text",
-    "[a-z]",
-    [{ byte: 2, deleteBytes: 1, insert: "" }],
-  ],
-  [
-    "turn class into set text",
-    "[[:alpha:]]",
-    [{ byte: 2, deleteBytes: 1, insert: "" }],
-  ],
-  ["split a UTF-8 character", "éx", [{ byte: 1, deleteBytes: 1, insert: "" }]],
-  [
-    "repair a decode failure",
-    Buffer.from([97, 255, 98]),
-    [{ byte: 1, deleteBytes: 1, insert: "é" }],
-  ],
-  [
-    "turn CRLF into bare CR",
-    "a\r\nb",
-    [{ byte: 2, deleteBytes: 1, insert: "" }],
-  ],
-  [
-    "insert BOM at the start",
-    "a\n",
-    [{ byte: 0, deleteBytes: 0, insert: "\uFEFF" }],
-  ],
-  [
-    "remove a leading BOM",
-    "\uFEFFa",
-    [{ byte: 0, deleteBytes: 3, insert: "" }],
-  ],
-  [
-    "make trailing spaces significant",
-    "a  ",
-    [{ byte: 3, deleteBytes: 0, insert: "b" }],
-  ],
-  [
-    "break a multi-byte literal while keeping the character count",
-    Buffer.from("\uFEFF\uFEFF!/a"),
-    [{ byte: 4, deleteBytes: 3, insert: "é" }],
-  ],
+  },
+  {
+    name: "complete an escape",
+    source: "a\\",
+    edits: [{ byte: 2, deleteBytes: 0, insert: "*" }],
+  },
+  {
+    name: "end an incomplete escape line",
+    source: "a\\",
+    edits: [{ byte: 2, deleteBytes: 0, insert: "\nnext" }],
+  },
+  {
+    name: "complete an unclosed character set",
+    source: "[abc",
+    edits: [{ byte: 4, deleteBytes: 0, insert: "]" }],
+  },
+  {
+    name: "reopen a set",
+    source: "[abc]",
+    edits: [{ byte: 4, deleteBytes: 1, insert: "" }],
+  },
+  {
+    name: "change a comment to a pattern",
+    source: "# abc",
+    edits: [{ byte: 0, deleteBytes: 1, insert: "!" }],
+  },
+  {
+    name: "insert negation before a recursive wildcard",
+    source: "**/a",
+    edits: [{ byte: 0, deleteBytes: 0, insert: "!" }],
+  },
+  {
+    name: "change an asterisk context",
+    source: "a**/",
+    edits: [{ byte: 0, deleteBytes: 1, insert: "" }],
+  },
+  {
+    name: "turn a range into literal text",
+    source: "[a-z]",
+    edits: [{ byte: 2, deleteBytes: 1, insert: "" }],
+  },
+  {
+    name: "turn class into set text",
+    source: "[[:alpha:]]",
+    edits: [{ byte: 2, deleteBytes: 1, insert: "" }],
+  },
+  {
+    name: "split a UTF-8 character",
+    source: "éx",
+    edits: [{ byte: 1, deleteBytes: 1, insert: "" }],
+  },
+  {
+    name: "repair a decode failure",
+    source: Buffer.from([97, 255, 98]),
+    edits: [{ byte: 1, deleteBytes: 1, insert: "é" }],
+  },
+  {
+    name: "turn CRLF into bare CR",
+    source: "a\r\nb",
+    edits: [{ byte: 2, deleteBytes: 1, insert: "" }],
+  },
+  {
+    name: "insert BOM at the start",
+    source: "a\n",
+    edits: [{ byte: 0, deleteBytes: 0, insert: "\uFEFF" }],
+  },
+  {
+    name: "remove a leading BOM",
+    source: "\uFEFFa",
+    edits: [{ byte: 0, deleteBytes: 3, insert: "" }],
+  },
+  {
+    name: "make trailing spaces significant",
+    source: "a  ",
+    edits: [{ byte: 3, deleteBytes: 0, insert: "b" }],
+  },
+  {
+    name: "break a multi-byte literal while keeping the character count",
+    source: Buffer.from("\uFEFF\uFEFF!/a"),
+    edits: [{ byte: 4, deleteBytes: 3, insert: "é" }],
+  },
 ];
-for (const [name, source, edits] of histories) {
+for (const { name, source, edits } of histories) {
   test(`gitignore: ${name}`, () => {
     for (let length = 1; length <= edits.length; length++) {
       const history = edits.slice(0, length);
@@ -153,6 +191,60 @@ for (const [name, source, edits] of histories) {
         parse(source, history),
         parse(applyEdits(source, history)),
       );
+    }
+  });
+}
+
+const encodingHistories = [
+  {
+    name: "split and merge a decode failure run with a valid character",
+    source: Buffer.from([97, 255, 254, 128, 98]),
+    edits: [
+      { byte: 2, deleteBytes: 0, insert: "é" },
+      { byte: 2, deleteBytes: 2, insert: "" },
+      { byte: 1, deleteBytes: 3, insert: "x" },
+    ],
+    expected: [
+      [
+        ["invalid_syntax", "invalid_encoding", 1, 2],
+        ["invalid_syntax", "invalid_encoding", 4, 6],
+      ],
+      [["invalid_syntax", "invalid_encoding", 1, 4]],
+      [],
+    ],
+  },
+  {
+    name: "close and reopen a set between undecodable bytes",
+    source: Buffer.from([91, 255, 254, 128]),
+    edits: [
+      { byte: 2, deleteBytes: 0, insert: "]" },
+      { byte: 2, deleteBytes: 1, insert: "" },
+    ],
+    expected: [
+      [
+        ["invalid_syntax", "invalid_encoding", 1, 2],
+        ["invalid_syntax", "invalid_encoding", 3, 5],
+      ],
+      [
+        ["invalid_syntax", "invalid_encoding", 1, 4],
+        ["incomplete_syntax", "missing_set_close", 4, 4],
+      ],
+    ],
+  },
+  {
+    name: "repair a decode failure after a set backslash",
+    source: Buffer.from([91, 92, 255, 254, 93]),
+    edits: [{ byte: 2, deleteBytes: 2, insert: "a" }],
+    expected: [[]],
+  },
+];
+for (const { name, source, edits, expected } of encodingHistories) {
+  test(`gitignore: ${name}`, () => {
+    for (let length = 1; length <= edits.length; length++) {
+      const history = edits.slice(0, length);
+      const incremental = parse(source, history);
+      assert.deepEqual(incremental, parse(applyEdits(source, history)));
+      assert.deepEqual(issues(incremental), expected[length - 1]);
     }
   });
 }

@@ -115,9 +115,17 @@ static bool consume(
   enum Token token,
   uint32_t end
 ) {
-  while (s->position < end)
-    advance(s, lexer);
+  if (token == INVALID_ENCODING) {
+    do {
+      advance(s, lexer);
+    } while (!lexer->eof(lexer) && lexer->lookahead == -1);
+  } else {
+    while (s->position < end)
+      advance(s, lexer);
+  }
   lexer->mark_end(lexer);
+  if (token == INVALID_ENCODING && !lexer->eof(lexer))
+    lexer->advance(lexer, false);
   return emit(lexer, valid, token);
 }
 
