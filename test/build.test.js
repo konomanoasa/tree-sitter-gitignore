@@ -239,7 +239,7 @@ test("npm archives contain reproducible grammars for every language", () => {
     );
     const npmRoot = join(directory, "npm");
     mkdirSync(npmRoot);
-    run("tar", ["-xf", join(directory, archive.filename), "-C", npmRoot]);
+    run("tar", ["-xf", archive.filename, "-C", "npm"], directory);
     const npmSource = join(npmRoot, "package");
     for (const { name, path } of grammars) {
       const output = join(directory, "generated", name);

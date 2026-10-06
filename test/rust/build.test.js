@@ -140,7 +140,7 @@ test("npm and Cargo archives contain buildable bindings for every language", () 
     );
     const npmRoot = join(directory, "npm");
     mkdirSync(npmRoot);
-    run("tar", ["-xf", join(directory, archive.filename), "-C", npmRoot]);
+    run("tar", ["-xf", archive.filename, "-C", "npm"], directory);
     const npmSource = join(npmRoot, "package");
     const cargoTarget = join(directory, "cargo-package");
     run("cargo", [
@@ -157,9 +157,9 @@ test("npm and Cargo archives contain buildable bindings for every language", () 
       name.endsWith(".crate"),
     );
     assert.equal(archives.length, 1);
-    const cargoRoot = join(directory, "cargo");
+    const cargoRoot = join(packageDirectory, "cargo");
     mkdirSync(cargoRoot);
-    run("tar", ["-xf", join(packageDirectory, archives[0]), "-C", cargoRoot]);
+    run("tar", ["-xf", archives[0], "-C", "cargo"], packageDirectory);
     const cargoSource = join(cargoRoot, archives[0].slice(0, -".crate".length));
 
     for (const source of [npmSource, cargoSource]) {

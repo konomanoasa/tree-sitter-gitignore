@@ -14,8 +14,6 @@ const issueRules = Object.fromEntries(
 const issue = ($, name) =>
   field("issue", alias($[`_${name}_issue`], $.syntax_issue));
 const issues = ($, ...names) => names.map((name) => issue($, name));
-// Glob issues, including a backslash held by the owner before the issue of
-// the undecodable byte it cannot escape.
 const globIssues = ($) => [
   ...issues($, "invalid_encoding", "invalid_escape", "incomplete_escape"),
   seq($._escape_prefix, issue($, "invalid_encoding")),

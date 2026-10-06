@@ -287,3 +287,74 @@ test("gitignore: fixed-seed generated histories preserve source structure and is
     }
   }
 });
+
+const escapedSeparatorHistories = [
+  {
+    name: "change the escaped slash before double asterisk",
+    source: "x\\/**/b",
+    edits: [
+      { byte: 2, deleteBytes: 1, insert: "a" },
+      { byte: 2, deleteBytes: 1, insert: "/" },
+      { byte: 1, deleteBytes: 1, insert: "" },
+      { byte: 1, deleteBytes: 0, insert: "\\" },
+    ],
+    expected: [
+      "wildcard",
+      "recursive_wildcard",
+      "recursive_wildcard",
+      "recursive_wildcard",
+    ],
+  },
+  {
+    name: "change the escaped slash after double asterisk",
+    source: "x/**b",
+    edits: [
+      { byte: 4, deleteBytes: 0, insert: "\\/" },
+      { byte: 5, deleteBytes: 1, insert: "a" },
+      { byte: 5, deleteBytes: 1, insert: "/" },
+      { byte: 4, deleteBytes: 1, insert: "" },
+    ],
+    expected: [
+      "recursive_wildcard",
+      "wildcard",
+      "recursive_wildcard",
+      "recursive_wildcard",
+    ],
+  },
+  {
+    name: "change backslash parity before the following slash",
+    source: "x/**\\/b",
+    edits: [
+      { byte: 4, deleteBytes: 0, insert: "\\" },
+      { byte: 4, deleteBytes: 1, insert: "" },
+    ],
+    expected: ["wildcard", "recursive_wildcard"],
+  },
+  {
+    name: "extend and restore the double asterisk run",
+    source: "x\\/**\\/b",
+    edits: [
+      { byte: 3, deleteBytes: 0, insert: "*" },
+      { byte: 3, deleteBytes: 1, insert: "" },
+    ],
+    expected: ["wildcard", "recursive_wildcard"],
+  },
+];
+for (const { name, source, edits, expected } of escapedSeparatorHistories) {
+  test(`gitignore: ${name}`, () => {
+    for (let length = 1; length <= edits.length; length++) {
+      const history = edits.slice(0, length);
+      const incremental = parse(source, history);
+      assert.deepEqual(incremental, parse(applyEdits(source, history)));
+      assert.deepEqual(issues(incremental), []);
+      assert.deepEqual(
+        incremental
+          .filter(
+            ({ kind }) => kind === "wildcard" || kind === "recursive_wildcard",
+          )
+          .map(({ kind }) => kind),
+        [expected[length - 1]],
+      );
+    }
+  });
+}

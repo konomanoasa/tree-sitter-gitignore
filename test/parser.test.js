@@ -33,6 +33,106 @@ test("gitignore: public issue nodes have one outcome and one reason leaf", () =>
 
 const validCases = [
   [
+    "escaped slash before a recursive wildcard",
+    "x\\/**/b",
+    [
+      ["glob_literal", "x"],
+      ["escape", "\\/"],
+      ["recursive_wildcard", "**"],
+      ["path_separator", "/"],
+      ["glob_literal", "b"],
+    ],
+  ],
+  [
+    "escaped slash after a recursive wildcard",
+    "x/**\\/b",
+    [
+      ["glob_literal", "x"],
+      ["path_separator", "/"],
+      ["recursive_wildcard", "**"],
+      ["escape", "\\/"],
+      ["glob_literal", "b"],
+    ],
+  ],
+  [
+    "escaped slashes around a recursive wildcard",
+    "x\\/**\\/b",
+    [
+      ["glob_literal", "x"],
+      ["escape", "\\/"],
+      ["recursive_wildcard", "**"],
+      ["escape", "\\/"],
+      ["glob_literal", "b"],
+    ],
+  ],
+  [
+    "leading recursive wildcard before an escaped slash",
+    "**\\/b",
+    [
+      ["recursive_wildcard", "**"],
+      ["escape", "\\/"],
+      ["glob_literal", "b"],
+    ],
+  ],
+  [
+    "escaped nonseparator does not start a component",
+    "x\\a**/b",
+    [
+      ["glob_literal", "x"],
+      ["escape", "\\a"],
+      ["wildcard", "**"],
+      ["path_separator", "/"],
+      ["glob_literal", "b"],
+    ],
+  ],
+  [
+    "escaped nonseparator does not end a component",
+    "x/**\\a/b",
+    [
+      ["glob_literal", "x"],
+      ["path_separator", "/"],
+      ["wildcard", "**"],
+      ["escape", "\\a"],
+      ["path_separator", "/"],
+      ["glob_literal", "b"],
+    ],
+  ],
+  [
+    "escaped backslash before slash does not end a component",
+    "x/**\\\\/b",
+    [
+      ["glob_literal", "x"],
+      ["path_separator", "/"],
+      ["wildcard", "**"],
+      ["escape", "\\\\"],
+      ["path_separator", "/"],
+      ["glob_literal", "b"],
+    ],
+  ],
+  [
+    "escaped slash does not make three asterisks recursive",
+    "x\\/***/b",
+    [
+      ["glob_literal", "x"],
+      ["escape", "\\/"],
+      ["wildcard", "***"],
+      ["path_separator", "/"],
+      ["glob_literal", "b"],
+    ],
+  ],
+  [
+    "slash inside a set does not start a component",
+    "[\\/]**/b",
+    [
+      ["set_open", "["],
+      ["escape", "\\/"],
+      ["set_close", "]"],
+      ["wildcard", "**"],
+      ["path_separator", "/"],
+      ["glob_literal", "b"],
+    ],
+  ],
+  [
     "empty class retains its four delimiters without a name",
     "[[::]]",
     [
@@ -333,11 +433,11 @@ const validCases = [
     ],
   ],
   [
-    "escaped slash does not anchor a recursive wildcard",
+    "escaped slash starts a trailing recursive wildcard",
     "\\/**",
     [
       ["escape", "\\/"],
-      ["wildcard", "**"],
+      ["recursive_wildcard", "**"],
     ],
   ],
   [
@@ -916,10 +1016,35 @@ test("gitignore: Git runtime checks the documented supplementary cases", (t) => 
     const version = run(["--version"]);
     assert.equal(version.status, 0, version.stderr);
     t.diagnostic(
-      `Supplementary behavior established with Git 2.55.0; checked with ${version.stdout.trim()}`,
+      `Supplementary behavior established with Git 2.55.0 (escaped-slash boundaries: Git 2.56.0); checked with ${version.stdout.trim()}`,
     );
     assert.equal(run(["init", "--quiet"]).status, 0);
     const cases = [
+      {
+        pattern: "x\\/**/b",
+        paths: ["x/b", "x/y/b", "x/y/z/b"],
+        expected: ["x/b", "x/y/b", "x/y/z/b"],
+      },
+      {
+        pattern: "x/**\\/b",
+        paths: ["x/b", "x/y/b", "x/y/z/b"],
+        expected: ["x/y/b", "x/y/z/b"],
+      },
+      {
+        pattern: "**\\/b",
+        paths: ["b", "x/b", "x/y/b"],
+        expected: ["x/b", "x/y/b"],
+      },
+      {
+        pattern: "x\\/*/b",
+        paths: ["x/b", "x/y/b", "x/y/z/b"],
+        expected: ["x/y/b"],
+      },
+      {
+        pattern: "x/*\\/b",
+        paths: ["x/b", "x/y/b", "x/y/z/b"],
+        expected: ["x/y/b"],
+      },
       {
         pattern: "[a-[:digit:]]",
         paths: ["a", "1", "-", "a]", "d]", ":]", "1]"],

@@ -58,7 +58,6 @@ function renderedCaptures(html, source) {
 function createHighlighter({ directory, root, run, captureNames }) {
   const parserDirectory = join(directory, "parsers");
   mkdirSync(parserDirectory);
-  // CLI discovery requires a tree-sitter-* entry even when the checkout is renamed.
   symlinkSync(root, join(parserDirectory, "tree-sitter-test"), "junction");
   const configPath = join(directory, "highlight.json");
   const capturePath = join(directory, "captures.txt");
@@ -125,7 +124,6 @@ function assertCaptures(source, actual, ranges) {
     expected.fill(capture, start, end);
     previousEnd = end;
   }
-  // HTML emits line breaks outside spans.
   for (const [index, byte] of bytes.entries()) {
     if (byte !== 10)
       assert.equal(
@@ -181,6 +179,17 @@ function assertCommand(arguments_) {
 const grammar = grammars[0];
 
 const finalCaptureCases = [
+  {
+    name: "escaped separators retain their own captures around a recursive wildcard",
+    source: "x\\/**\\/b",
+    captures: [
+      [0, 1, "string.special.path"],
+      [1, 3, "string.escape"],
+      [3, 5, "character.special"],
+      [5, 7, "string.escape"],
+      [7, 8, "string.special.path"],
+    ],
+  },
   {
     name: "empty class highlights only existing delimiters",
     source: "[[::]]",
@@ -307,7 +316,6 @@ for (const { name, source, captures } of finalCaptureCases) {
 test(`${grammar.name}: EOF CR has no capture`, () => {
   const path = join(directory, `input.${grammar.name}`);
   writeFileSync(path, "a\r");
-  // HTML drops trailing CR, so compare query capture ranges directly.
   const output = assertCommand([
     "query",
     "--captures",

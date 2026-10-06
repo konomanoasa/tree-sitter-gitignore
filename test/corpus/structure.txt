@@ -195,3 +195,20 @@ Empty class has delimiters without a synthetic name
         opening: (set_open)
         (character_class)
         closing: (set_close))))
+
+==================
+Escaped slashes delimit recursive wildcards without changing escape leaves
+==================
+x\/**/b
+x/**\/b
+**\/b
+x\/**
+x\/***/b
+---
+
+(document
+  (pattern (glob_literal) (escape) (recursive_wildcard) (path_separator) (glob_literal) (line_ending))
+  (pattern (glob_literal) (path_separator) (recursive_wildcard) (escape) (glob_literal) (line_ending))
+  (pattern (recursive_wildcard) (escape) (glob_literal) (line_ending))
+  (pattern (glob_literal) (escape) (recursive_wildcard) (line_ending))
+  (pattern (glob_literal) (escape) (wildcard) (path_separator) (glob_literal)))
