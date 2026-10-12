@@ -5,3 +5,208 @@ Empty document
 ---
 
 (document)
+
+==================
+Comment, blank line and negated pattern
+==================
+# files
+
+!foo/
+
+---
+
+(document (comment (comment_marker) (comment_text) (line_ending)) (blank_line (line_ending)) (pattern negation: (negation) (glob_literal) (path_separator) (line_ending)))
+
+==================
+EOF carriage return is separate from pattern text
+:cst
+==================
+a
+---
+
+0:0 - 0:2   document
+0:0 - 0:2     pattern
+0:0 - 0:1       glob_literal `a`
+0:1 - 0:2       trailing_carriage_return `\r`
+
+==================
+Only the last carriage return is removed at EOF
+:cst
+==================
+a
+---
+
+0:0 - 0:3   document
+0:0 - 0:3     pattern
+0:0 - 0:2       glob_literal `a\r`
+0:2 - 0:3       trailing_carriage_return `\r`
+
+==================
+Trailing spaces precede the EOF carriage return
+:cst
+==================
+a  
+---
+
+0:0 - 0:4   document
+0:0 - 0:4     pattern
+0:0 - 0:1       glob_literal `a`
+0:1 - 0:3       trailing_space `  `
+0:3 - 0:4       trailing_carriage_return `\r`
+
+==================
+Carriage return before a space is literal
+:cst
+==================
+a 
+---
+
+0:0 - 0:3   document
+0:0 - 0:3     pattern
+0:0 - 0:2       glob_literal `a\r`
+0:2 - 0:3       trailing_space ` `
+
+==================
+CR-only content is preserved
+:cst
+==================
+
+---
+
+0:0 - 0:1   document
+0:0 - 0:1     blank_line
+0:0 - 0:1       trailing_carriage_return `\r`
+
+==================
+Comment retains spaces and ignores glob escapes
+:cst
+==================
+# \*  
+---
+
+0:0 - 0:6   document
+0:0 - 0:6     comment
+0:0 - 0:1       comment_marker `#`
+0:1 - 0:6       comment_text ` \\*  `
+
+==================
+Trailing spaces are separate
+:cst
+==================
+a  
+---
+
+0:0 - 0:3   document
+0:0 - 0:3     pattern
+0:0 - 0:1       glob_literal `a`
+0:1 - 0:3       trailing_space `  `
+
+==================
+Escaped trailing space stays in the pattern
+:cst
+==================
+a\  
+---
+
+0:0 - 0:4   document
+0:0 - 0:4     pattern
+0:0 - 0:1       glob_literal `a`
+0:1 - 0:3       escape `\\ `
+0:3 - 0:4       trailing_space ` `
+
+==================
+Space-only line
+:cst
+==================
+  
+---
+
+0:0 - 0:2   document
+0:0 - 0:2     blank_line
+0:0 - 0:2       trailing_space `  `
+
+==================
+LF blank line
+:cst
+==================
+
+
+---
+
+0:0 - 1:0   document
+0:0 - 1:0     blank_line
+0:0 - 1:0       line_ending
+0:0 - 0:1         `\n`
+
+==================
+CRLF blank line
+:cst
+==================
+
+
+---
+
+0:0 - 1:0   document
+0:0 - 1:0     blank_line
+0:0 - 1:0       line_ending
+0:0 - 0:2         `\r\n`
+
+==================
+CRLF trailing spaces
+:cst
+==================
+a  
+
+---
+
+0:0 - 1:0   document
+0:0 - 1:0     pattern
+0:0 - 0:1       glob_literal `a`
+0:1 - 0:3       trailing_space `  `
+0:3 - 1:0       line_ending
+0:3 - 0:5         `\r\n`
+
+==================
+Interior bare CR is literal
+:cst
+==================
+ab
+---
+
+0:0 - 0:3   document
+0:0 - 0:3     pattern
+0:0 - 0:3       glob_literal `a\rb`
+
+==================
+Unicode literal and escape
+:cst
+==================
+日本\é
+---
+
+0:0 - 0:9   document
+0:0 - 0:9     pattern
+0:0 - 0:6       glob_literal `日本`
+0:6 - 0:9       escape `\\é`
+
+==================
+Leading BOM is excluded
+:cst
+==================
+﻿a
+---
+
+0:3 - 0:4   document
+0:3 - 0:4     pattern
+0:3 - 0:4       glob_literal `a`
+
+==================
+Only the first BOM is excluded
+:cst
+==================
+﻿﻿a
+---
+
+0:3 - 0:7   document
+0:3 - 0:7     pattern
+0:3 - 0:7       glob_literal `﻿a`

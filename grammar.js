@@ -1,8 +1,11 @@
+const missingKinds = (name) => [
+  [`missing_${name}`, "invalid_syntax", `missing_${name}`],
+  [`incomplete_${name}`, "incomplete_syntax", `missing_${name}`],
+];
 const issueKinds = [
-  ["missing_set_close", "invalid_syntax", "missing_set_close"],
-  ["incomplete_set_close", "incomplete_syntax", "missing_set_close"],
+  ...missingKinds("set_close"),
   ["invalid_encoding", "invalid_syntax", "invalid_encoding"],
-  ["invalid_escape", "invalid_syntax", "incomplete_escape"],
+  ["ended_escape", "invalid_syntax", "incomplete_escape"],
   ["incomplete_escape", "incomplete_syntax", "incomplete_escape"],
 ];
 const issueRules = Object.fromEntries(
@@ -14,8 +17,10 @@ const issueRules = Object.fromEntries(
 const issue = ($, name) =>
   field("issue", alias($[`_${name}_issue`], $.syntax_issue));
 const issues = ($, ...names) => names.map((name) => issue($, name));
+const missing = ($, name) =>
+  choice(issue($, `missing_${name}`), issue($, `incomplete_${name}`));
 const globIssues = ($) => [
-  ...issues($, "invalid_encoding", "invalid_escape", "incomplete_escape"),
+  ...issues($, "invalid_encoding", "ended_escape", "incomplete_escape"),
   seq($._escape_prefix, issue($, "invalid_encoding")),
 ];
 
@@ -118,10 +123,7 @@ export default grammar({
             ),
           ),
         ),
-        choice(
-          field("closing", $.set_close),
-          ...issues($, "missing_set_close", "incomplete_set_close"),
-        ),
+        choice(field("closing", $.set_close), missing($, "set_close")),
       ),
     character_range: ($) =>
       seq(

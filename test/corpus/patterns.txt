@@ -1,0 +1,172 @@
+==================
+Invalid escape preserves the next line
+==================
+a\
+next
+
+---
+
+(document (pattern (glob_literal) issue: (syntax_issue (invalid_syntax (incomplete_escape))) (line_ending)) (pattern (glob_literal) (line_ending)))
+
+==================
+Leading spaces preserve literal comment and negation markers
+:cst
+==================
+ #a !b
+---
+
+0:0 - 0:6   document
+0:0 - 0:6     pattern
+0:0 - 0:6       glob_literal ` #a !b`
+
+==================
+Inline hash is literal
+:cst
+==================
+a#b
+---
+
+0:0 - 0:3   document
+0:0 - 0:3     pattern
+0:0 - 0:3       glob_literal `a#b`
+
+==================
+Negation without a pattern is preserved
+:cst
+==================
+!
+---
+
+0:0 - 0:1   document
+0:0 - 0:1     pattern
+0:0 - 0:1       negation: negation `!`
+
+==================
+Slash-only pattern is preserved
+:cst
+==================
+/
+---
+
+0:0 - 0:1   document
+0:0 - 0:1     pattern
+0:0 - 0:1       path_separator `/`
+
+==================
+Negation applies only once
+:cst
+==================
+!!a
+---
+
+0:0 - 0:3   document
+0:0 - 0:3     pattern
+0:0 - 0:1       negation: negation `!`
+0:1 - 0:3       glob_literal `!a`
+
+==================
+Escaped special markers
+:cst
+==================
+\#\!\*\?\[
+---
+
+0:0  - 0:10   document
+0:0  - 0:10     pattern
+0:0  - 0:2        escape `\\#`
+0:2  - 0:4        escape `\\!`
+0:4  - 0:6        escape `\\*`
+0:6  - 0:8        escape `\\?`
+0:8  - 0:10       escape `\\[`
+
+==================
+Tabs are not trimmed
+:cst
+==================
+a	
+---
+
+0:0 - 0:2   document
+0:0 - 0:2     pattern
+0:0 - 0:2       glob_literal `a\t`
+
+==================
+EOF CR leaves an unfinished escape incomplete
+:cst
+==================
+a\
+---
+
+0:0 - 0:3   document
+0:0 - 0:3     pattern
+0:0 - 0:1       glob_literal `a`
+0:1 - 0:2       issue: syntax_issue
+0:1 - 0:2         incomplete_syntax
+0:1 - 0:2           incomplete_escape `\\`
+0:2 - 0:3       trailing_carriage_return `\r`
+
+==================
+Escape at EOF
+:cst
+==================
+foo\
+---
+
+0:0 - 0:4   document
+0:0 - 0:4     pattern
+0:0 - 0:3       glob_literal `foo`
+0:3 - 0:4       issue: syntax_issue
+0:3 - 0:4         incomplete_syntax
+0:3 - 0:4           incomplete_escape `\\`
+
+==================
+Escape before LF recovers the next line
+:cst
+==================
+foo\
+next
+
+---
+
+0:0 - 2:0   document
+0:0 - 1:0     pattern
+0:0 - 0:3       glob_literal `foo`
+0:3 - 0:4       issue: syntax_issue
+0:3 - 0:4         invalid_syntax
+0:3 - 0:4           incomplete_escape `\\`
+0:4 - 1:0       line_ending
+0:4 - 0:5         `\n`
+1:0 - 2:0     pattern
+1:0 - 1:4       glob_literal `next`
+1:4 - 2:0       line_ending
+1:4 - 1:5         `\n`
+
+==================
+Escape before CRLF
+:cst
+==================
+\
+
+---
+
+0:0 - 1:0   document
+0:0 - 1:0     pattern
+0:0 - 0:1       issue: syntax_issue
+0:0 - 0:1         invalid_syntax
+0:0 - 0:1           incomplete_escape `\\`
+0:1 - 1:0       line_ending
+0:1 - 0:3         `\r\n`
+
+==================
+Incomplete escape at EOF retains its issue range
+:cst
+==================
+a\
+---
+
+0:0 - 0:2   document
+0:0 - 0:2     pattern
+0:0 - 0:1       glob_literal `a`
+0:1 - 0:2       issue: syntax_issue
+0:1 - 0:2         incomplete_syntax
+0:1 - 0:2           incomplete_escape `\\`
