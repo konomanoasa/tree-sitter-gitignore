@@ -134,7 +134,7 @@ static bool peek(const Cursor *c, uint32_t limit, int32_t ch) {
   return c->position < limit && c->lexer->lookahead == ch;
 }
 
-// The cursor has passed the backslash.
+// Backslash already consumed.
 static enum Token escape_kind(const Scanner *s, Cursor *c, uint32_t limit) {
   if (c->position >= limit) return absent(s, ENDED_ESCAPE, INCOMPLETE_ESCAPE);
   const enum Token kind = c->lexer->lookahead == -1 ? ESCAPE_PREFIX : ESCAPE;
