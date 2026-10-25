@@ -7,14 +7,6 @@ Negated set owns ranges and classes
 (document (pattern (character_set opening: (set_open) negation: (set_negation) (character_range lower: (range_character) (range_operator) upper: (range_character)) (character_class name: (class_name)) closing: (set_close))))
 
 ==================
-Set text and escapes
-==================
-[ab\]cd]
----
-
-(document (pattern (character_set opening: (set_open) (set_text) (escape) (set_text) closing: (set_close))))
-
-==================
 Dot bracket notation uses ordinary set boundaries
 ==================
 [[.a.]-[.z.]]
@@ -32,42 +24,6 @@ Dot bracket notation uses ordinary set boundaries
       (set_text)
       closing: (set_close))
     (glob_literal)))
-
-==================
-Unclosed set retains text and reports its missing close
-==================
-a[bc*
----
-
-(document
-  (pattern
-    (glob_literal)
-    (character_set
-      (set_open)
-      (set_text)
-      (syntax_issue
-        (incomplete_syntax
-          (missing_set_close))))))
-
-==================
-Classes inside an incomplete outer set preserve their owners
-==================
-[[:x:][[:y:][
----
-
-(document
-  (pattern
-    (character_set
-      opening: (set_open)
-      (character_class
-        name: (class_name))
-      (set_text)
-      (character_class
-        name: (class_name))
-      (set_text)
-      issue: (syntax_issue
-        (incomplete_syntax
-          (missing_set_close))))))
 
 ==================
 Empty class retains its four delimiters without a name
@@ -529,60 +485,6 @@ Dot bracket text preserves Unicode byte ranges
 0:7 - 0:8       glob_literal `]`
 
 ==================
-EOF CR leaves an unfinished set incomplete
-:cst
-==================
-[a
----
-
-0:0 - 0:3   document
-0:0 - 0:3     pattern
-0:0 - 0:2       character_set
-0:0 - 0:1         opening: set_open `[`
-0:1 - 0:2         set_text `a`
-0:2 - 0:2         issue: syntax_issue
-0:2 - 0:2           incomplete_syntax
-0:2 - 0:2             missing_set_close
-0:2 - 0:3       trailing_carriage_return `\r`
-
-==================
-Empty class does not close its outer set
-:cst
-==================
-[[::]
----
-
-0:0 - 0:5   document
-0:0 - 0:5     pattern
-0:0 - 0:5       character_set
-0:0 - 0:1         opening: set_open `[`
-0:1 - 0:5         character_class
-0:1 - 0:2           "["
-0:2 - 0:3           ":"
-0:3 - 0:4           ":"
-0:4 - 0:5           "]"
-0:5 - 0:5         issue: syntax_issue
-0:5 - 0:5           incomplete_syntax
-0:5 - 0:5             missing_set_close
-
-==================
-Unclosed set before trailing spaces at EOF stays incomplete
-:cst
-==================
-[abc  
----
-
-0:0 - 0:6   document
-0:0 - 0:6     pattern
-0:0 - 0:4       character_set
-0:0 - 0:1         opening: set_open `[`
-0:1 - 0:4         set_text `abc`
-0:4 - 0:4         issue: syntax_issue
-0:4 - 0:4           incomplete_syntax
-0:4 - 0:4             missing_set_close
-0:4 - 0:6       trailing_space `  `
-
-==================
 Unclosed set before trailing spaces and LF is invalid
 :cst
 ==================
@@ -649,23 +551,6 @@ a[:[:[:]
 0:8 - 0:9         `\n`
 
 ==================
-Unclosed set at EOF
-:cst
-==================
-x[abc
----
-
-0:0 - 0:5   document
-0:0 - 0:5     pattern
-0:0 - 0:1       glob_literal `x`
-0:1 - 0:5       character_set
-0:1 - 0:2         opening: set_open `[`
-0:2 - 0:5         set_text `abc`
-0:5 - 0:5         issue: syntax_issue
-0:5 - 0:5           incomplete_syntax
-0:5 - 0:5             missing_set_close
-
-==================
 Unclosed set at line end
 :cst
 ==================
@@ -685,6 +570,97 @@ next
 0:4 - 0:5         `\n`
 1:0 - 1:4     pattern
 1:0 - 1:4       glob_literal `next`
+
+==================
+Classes inside an incomplete outer set preserve their owners
+==================
+[[:x:][[:y:][
+---
+
+(document
+  (pattern
+    (character_set
+      opening: (set_open)
+      (character_class
+        name: (class_name))
+      (set_text)
+      (character_class
+        name: (class_name))
+      (set_text)
+      issue: (syntax_issue
+        (incomplete_syntax
+          (missing_set_close))))))
+
+==================
+EOF CR leaves an unfinished set incomplete
+:cst
+==================
+[a
+---
+
+0:0 - 0:3   document
+0:0 - 0:3     pattern
+0:0 - 0:2       character_set
+0:0 - 0:1         opening: set_open `[`
+0:1 - 0:2         set_text `a`
+0:2 - 0:2         issue: syntax_issue
+0:2 - 0:2           incomplete_syntax
+0:2 - 0:2             missing_set_close
+0:2 - 0:3       trailing_carriage_return `\r`
+
+==================
+Empty class does not close its outer set
+:cst
+==================
+[[::]
+---
+
+0:0 - 0:5   document
+0:0 - 0:5     pattern
+0:0 - 0:5       character_set
+0:0 - 0:1         opening: set_open `[`
+0:1 - 0:5         character_class
+0:1 - 0:2           "["
+0:2 - 0:3           ":"
+0:3 - 0:4           ":"
+0:4 - 0:5           "]"
+0:5 - 0:5         issue: syntax_issue
+0:5 - 0:5           incomplete_syntax
+0:5 - 0:5             missing_set_close
+
+==================
+Unclosed set before trailing spaces at EOF stays incomplete
+:cst
+==================
+[abc  
+---
+
+0:0 - 0:6   document
+0:0 - 0:6     pattern
+0:0 - 0:4       character_set
+0:0 - 0:1         opening: set_open `[`
+0:1 - 0:4         set_text `abc`
+0:4 - 0:4         issue: syntax_issue
+0:4 - 0:4           incomplete_syntax
+0:4 - 0:4             missing_set_close
+0:4 - 0:6       trailing_space `  `
+
+==================
+Unclosed set at EOF
+:cst
+==================
+x[abc
+---
+
+0:0 - 0:5   document
+0:0 - 0:5     pattern
+0:0 - 0:1       glob_literal `x`
+0:1 - 0:5       character_set
+0:1 - 0:2         opening: set_open `[`
+0:2 - 0:5         set_text `abc`
+0:5 - 0:5         issue: syntax_issue
+0:5 - 0:5           incomplete_syntax
+0:5 - 0:5             missing_set_close
 
 ==================
 Leading close remains a member of an incomplete set

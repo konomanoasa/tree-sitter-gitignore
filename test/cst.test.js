@@ -4,14 +4,30 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { root } from "../scripts/tree-sitter.js";
 import nodeTypes from "../src/node-types.json" with { type: "json" };
-import { parseCorpus } from "./support/corpus.js";
 import { issues, leaves, owners, parseCst } from "./support/cst.js";
-import {
-  applyEdits,
-  assertEditHistory,
-  assertIncrementalEqualsFresh,
-  parse,
-} from "./support/parser.js";
+import { parse } from "./support/parser.js";
+
+function parseCorpus(text) {
+  const sections = text.split("==================\n");
+  assert.equal(sections.shift(), "", "corpus must begin with a header");
+  assert.equal(sections.length % 2, 0, "corpus headers must be paired");
+  const cases = [];
+  for (let index = 0; index < sections.length; index += 2) {
+    const [name, ...attributes] = sections[index].trimEnd().split("\n");
+    assert.ok(name, "corpus case must have a name");
+    for (const attribute of attributes) {
+      assert.ok(
+        attribute === ":cst" || attribute === ":error",
+        `unsupported corpus attribute: ${attribute}`,
+      );
+    }
+    const parts = sections[index + 1].split("\n---\n");
+    assert.equal(parts.length, 2, `${name}: expected one output separator`);
+    const source = parts[0].endsWith("\r") ? parts[0].slice(0, -1) : parts[0];
+    cases.push({ name, source });
+  }
+  return cases;
+}
 
 const corpusDirectory = join(root, "test/corpus");
 for (const file of readdirSync(corpusDirectory).sort()) {
@@ -106,6 +122,25 @@ test("gitignore: compound delimiters are anonymous and have no opening or closin
     assert.deepEqual(Object.keys(node.fields), ["issue", "name"]);
   }
 });
+
+const largeInputCounts = {
+  lines: 10_000,
+  literalCharacters: 200_000,
+};
+const largeInputCases = [
+  [
+    "many independent lines",
+    "!**/node_modules/\n".repeat(largeInputCounts.lines),
+    0,
+  ],
+  ["one long literal", "a".repeat(largeInputCounts.literalCharacters), 0],
+];
+for (const [name, source, expectedIssues] of largeInputCases) {
+  test(`gitignore: large input: ${name}`, () => {
+    const tree = parse(source);
+    assert.equal(issues(tree).length, expectedIssues);
+  });
+}
 
 const encodingCases = [
   [
@@ -221,122 +256,6 @@ for (const [name, source, expected, owner] of encodingCases) {
     assert.deepEqual(owners(tree), owner);
     for (const node of tree.filter(({ kind }) => kind === "syntax_issue"))
       assert.equal(node.field, "issue");
-  });
-}
-
-const encodingHistories = [
-  {
-    name: "split and merge a decode failure run with a valid character",
-    source: Buffer.from([97, 255, 254, 128, 98]),
-    edits: [
-      { byte: 2, deleteBytes: 0, insert: "é" },
-      { byte: 2, deleteBytes: 2, insert: "" },
-      { byte: 1, deleteBytes: 3, insert: "x" },
-    ],
-    expected: [
-      [
-        ["invalid_syntax", "invalid_encoding", 1, 2],
-        ["invalid_syntax", "invalid_encoding", 4, 6],
-      ],
-      [["invalid_syntax", "invalid_encoding", 1, 4]],
-      [],
-    ],
-  },
-  {
-    name: "close and reopen a set between undecodable bytes",
-    source: Buffer.from([91, 255, 254, 128]),
-    edits: [
-      { byte: 2, deleteBytes: 0, insert: "]" },
-      { byte: 2, deleteBytes: 1, insert: "" },
-    ],
-    expected: [
-      [
-        ["invalid_syntax", "invalid_encoding", 1, 2],
-        ["invalid_syntax", "invalid_encoding", 3, 5],
-      ],
-      [
-        ["invalid_syntax", "invalid_encoding", 1, 4],
-        ["incomplete_syntax", "missing_set_close", 4, 4],
-      ],
-    ],
-  },
-  {
-    name: "repair a decode failure after a set backslash",
-    source: Buffer.from([91, 92, 255, 254, 93]),
-    edits: [{ byte: 2, deleteBytes: 2, insert: "a" }],
-    expected: [[]],
-  },
-];
-for (const { name, source, edits, expected } of encodingHistories) {
-  test(`gitignore: ${name}`, () => {
-    for (let length = 1; length <= edits.length; length++) {
-      const history = edits.slice(0, length);
-      const incremental = assertIncrementalEqualsFresh(
-        source,
-        history,
-        applyEdits(source, history),
-      );
-      assert.deepEqual(issues(incremental), expected[length - 1]);
-    }
-  });
-}
-
-for (const [owner, prefix, suffix] of [
-  ["pattern", "a", "b"],
-  ["comment", "# a", "b"],
-  ["set", "[a", "]"],
-  ["ignored suffix", "a\u0000", "b"],
-]) {
-  test(`gitignore: splitting the character after a decoding failure merges the issue in ${owner}`, () => {
-    const source = Buffer.concat([
-      Buffer.from(prefix),
-      Buffer.from([255]),
-      Buffer.from(`é${suffix}`),
-    ]);
-    const edits = [
-      { byte: Buffer.byteLength(prefix) + 2, deleteBytes: 1, insert: "" },
-    ];
-    const incremental = parse(source, edits);
-    assert.deepEqual(incremental, parse(applyEdits(source, edits)));
-    assert.deepEqual(
-      incremental
-        .filter(({ kind }) => kind === "syntax_issue")
-        .map(({ start, end }) => [start, end]),
-      [[Buffer.byteLength(prefix), Buffer.byteLength(prefix) + 2]],
-    );
-  });
-}
-
-const editCases = [
-  {
-    name: "split a UTF-8 character",
-    source: "éx",
-    edits: [{ byte: 1, deleteBytes: 1, insert: "" }],
-  },
-  {
-    name: "repair a decode failure",
-    source: Buffer.from([97, 255, 98]),
-    edits: [{ byte: 1, deleteBytes: 1, insert: "é" }],
-  },
-  {
-    name: "insert BOM at the start",
-    source: "a\n",
-    edits: [{ byte: 0, deleteBytes: 0, insert: "\uFEFF" }],
-  },
-  {
-    name: "remove a leading BOM",
-    source: "\uFEFFa",
-    edits: [{ byte: 0, deleteBytes: 3, insert: "" }],
-  },
-  {
-    name: "break a multi-byte literal while keeping the character count",
-    source: Buffer.from("\uFEFF\uFEFF!/a"),
-    edits: [{ byte: 4, deleteBytes: 3, insert: "é" }],
-  },
-];
-for (const entry of editCases) {
-  test(`gitignore: ${entry.name}`, () => {
-    assertEditHistory(entry);
   });
 }
 

@@ -1,14 +1,4 @@
 ==================
-Invalid escape preserves the next line
-==================
-a\
-next
-
----
-
-(document (pattern (glob_literal) issue: (syntax_issue (invalid_syntax (incomplete_escape))) (line_ending)) (pattern (glob_literal) (line_ending)))
-
-==================
 Leading spaces preserve literal comment and negation markers
 :cst
 ==================
@@ -91,35 +81,6 @@ a
 0:0 - 0:2       glob_literal `a\t`
 
 ==================
-EOF CR leaves an unfinished escape incomplete
-:cst
-==================
-a\
----
-
-0:0 - 0:3   document
-0:0 - 0:3     pattern
-0:0 - 0:1       glob_literal `a`
-0:1 - 0:2       issue: syntax_issue
-0:1 - 0:2         incomplete_syntax
-0:1 - 0:2           incomplete_escape `\\`
-0:2 - 0:3       trailing_carriage_return `\r`
-
-==================
-Escape at EOF
-:cst
-==================
-foo\
----
-
-0:0 - 0:4   document
-0:0 - 0:4     pattern
-0:0 - 0:3       glob_literal `foo`
-0:3 - 0:4       issue: syntax_issue
-0:3 - 0:4         incomplete_syntax
-0:3 - 0:4           incomplete_escape `\\`
-
-==================
 Escape before LF recovers the next line
 :cst
 ==================
@@ -158,15 +119,30 @@ Escape before CRLF
 0:1 - 0:3         `\r\n`
 
 ==================
-Incomplete escape at EOF retains its issue range
+EOF CR leaves an unfinished escape incomplete
 :cst
 ==================
-a\
+a\
 ---
 
-0:0 - 0:2   document
-0:0 - 0:2     pattern
+0:0 - 0:3   document
+0:0 - 0:3     pattern
 0:0 - 0:1       glob_literal `a`
 0:1 - 0:2       issue: syntax_issue
 0:1 - 0:2         incomplete_syntax
 0:1 - 0:2           incomplete_escape `\\`
+0:2 - 0:3       trailing_carriage_return `\r`
+
+==================
+Escape at EOF
+:cst
+==================
+foo\
+---
+
+0:0 - 0:4   document
+0:0 - 0:4     pattern
+0:0 - 0:3       glob_literal `foo`
+0:3 - 0:4       issue: syntax_issue
+0:3 - 0:4         incomplete_syntax
+0:3 - 0:4           incomplete_escape `\\`

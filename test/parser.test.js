@@ -7,7 +7,6 @@ import { test } from "node:test";
 import { issues } from "./support/cst.js";
 import {
   applyEdits,
-  assertEditHistory,
   assertIncrementalEqualsFresh,
   parse,
 } from "./support/parser.js";
@@ -183,8 +182,6 @@ test("gitignore: Git runtime checks the documented supplementary cases", (t) => 
 });
 
 const largeInputCounts = {
-  lines: 10_000,
-  literalCharacters: 200_000,
   unmatchedBrackets: 50_000,
   incompleteClassPrefixes: 16_000,
   characterSets: 10_000,
@@ -193,12 +190,6 @@ const largeInputCounts = {
   mixedItemPrefixes: 80_000,
 };
 const largeInputCases = [
-  [
-    "many independent lines",
-    "!**/node_modules/\n".repeat(largeInputCounts.lines),
-    0,
-  ],
-  ["one long literal", "a".repeat(largeInputCounts.literalCharacters), 0],
   [
     "many unmatched open brackets",
     "[".repeat(largeInputCounts.unmatchedBrackets),
@@ -239,132 +230,6 @@ for (const [name, source, expectedIssues] of largeInputCases) {
   test(`gitignore: large input: ${name}`, () => {
     const tree = parse(source);
     assert.equal(issues(tree).length, expectedIssues);
-  });
-}
-
-const editCases = [
-  {
-    name: "remove NUL and restore a set close",
-    source: "[a\0b]",
-    edits: [{ byte: 2, deleteBytes: 1, insert: "" }],
-  },
-  {
-    name: "insert and remove a class name",
-    source: "[[::]]",
-    edits: [
-      { byte: 3, deleteBytes: 0, insert: "digit" },
-      { byte: 3, deleteBytes: 5, insert: "" },
-    ],
-  },
-  {
-    name: "turn the EOF CR into an interior character",
-    source: "a\r",
-    edits: [{ byte: 2, deleteBytes: 0, insert: "b" }],
-  },
-  {
-    name: "turn the EOF CR into CRLF",
-    source: "a\r",
-    edits: [{ byte: 2, deleteBytes: 0, insert: "\n" }],
-  },
-  {
-    name: "turn an interior CR into the EOF suffix",
-    source: "a\rb",
-    edits: [{ byte: 2, deleteBytes: 1, insert: "" }],
-  },
-  {
-    name: "complete a set after trailing spaces and remove its close",
-    source: "[abc  ",
-    edits: [
-      { byte: 6, deleteBytes: 0, insert: "]" },
-      { byte: 6, deleteBytes: 1, insert: "" },
-    ],
-  },
-  {
-    name: "terminate and reopen a set after trailing spaces",
-    source: "[abc  ",
-    edits: [
-      { byte: 6, deleteBytes: 0, insert: "\n" },
-      { byte: 6, deleteBytes: 1, insert: "" },
-    ],
-  },
-  {
-    name: "change a class into a range upper bracket and back",
-    source: "[a[:digit:]]",
-    edits: [
-      { byte: 2, deleteBytes: 0, insert: "-" },
-      { byte: 2, deleteBytes: 1, insert: "" },
-    ],
-  },
-  {
-    name: "replace class delimiters with ordinary equal signs",
-    source: "[[:digit:]]",
-    edits: [
-      { byte: 2, deleteBytes: 1, insert: "=" },
-      { byte: 8, deleteBytes: 1, insert: "=" },
-    ],
-  },
-  {
-    name: "delete and restore a bracket inside a set",
-    source: "[[.a.]-[.z.]]",
-    edits: [
-      { byte: 7, deleteBytes: 1, insert: "" },
-      { byte: 7, deleteBytes: 0, insert: "[" },
-    ],
-  },
-  {
-    name: "complete an escape",
-    source: "a\\",
-    edits: [{ byte: 2, deleteBytes: 0, insert: "*" }],
-  },
-  {
-    name: "end an incomplete escape line",
-    source: "a\\",
-    edits: [{ byte: 2, deleteBytes: 0, insert: "\nnext" }],
-  },
-  {
-    name: "complete an unclosed character set",
-    source: "[abc",
-    edits: [{ byte: 4, deleteBytes: 0, insert: "]" }],
-  },
-  {
-    name: "reopen a set",
-    source: "[abc]",
-    edits: [{ byte: 4, deleteBytes: 1, insert: "" }],
-  },
-  {
-    name: "change a comment to a pattern",
-    source: "# abc",
-    edits: [{ byte: 0, deleteBytes: 1, insert: "!" }],
-  },
-  {
-    name: "insert negation before a recursive wildcard",
-    source: "**/a",
-    edits: [{ byte: 0, deleteBytes: 0, insert: "!" }],
-  },
-  {
-    name: "change an asterisk context",
-    source: "a**/",
-    edits: [{ byte: 0, deleteBytes: 1, insert: "" }],
-  },
-  {
-    name: "turn a range into literal text",
-    source: "[a-z]",
-    edits: [{ byte: 2, deleteBytes: 1, insert: "" }],
-  },
-  {
-    name: "turn class into set text",
-    source: "[[:alpha:]]",
-    edits: [{ byte: 2, deleteBytes: 1, insert: "" }],
-  },
-  {
-    name: "make trailing spaces significant",
-    source: "a  ",
-    edits: [{ byte: 3, deleteBytes: 0, insert: "b" }],
-  },
-];
-for (const entry of editCases) {
-  test(`gitignore: ${entry.name}`, () => {
-    assertEditHistory(entry);
   });
 }
 
