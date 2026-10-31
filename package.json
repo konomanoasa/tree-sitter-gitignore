@@ -1,6 +1,6 @@
 {
   "name": "@konomanoasa/tree-sitter-gitignore",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Tree-sitter grammar for gitignore.",
   "license": "MIT",
   "repository": "git+https://github.com/konomanoasa/tree-sitter-gitignore.git",
