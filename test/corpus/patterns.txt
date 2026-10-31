@@ -81,68 +81,32 @@ a
 0:0 - 0:2       glob_literal `a\t`
 
 ==================
-Escape before LF recovers the next line
-:cst
+Escape before LF is rejected
+:error
 ==================
 foo\
 next
 
 ---
 
-0:0 - 2:0   document
-0:0 - 1:0     pattern
-0:0 - 0:3       glob_literal `foo`
-0:3 - 0:4       issue: syntax_issue
-0:3 - 0:4         invalid_syntax
-0:3 - 0:4           incomplete_escape `\\`
-0:4 - 1:0       line_ending
-0:4 - 0:5         `\n`
-1:0 - 2:0     pattern
-1:0 - 1:4       glob_literal `next`
-1:4 - 2:0       line_ending
-1:4 - 1:5         `\n`
-
 ==================
 Escape before CRLF
-:cst
+:error
 ==================
 \
 
 ---
 
-0:0 - 1:0   document
-0:0 - 1:0     pattern
-0:0 - 0:1       issue: syntax_issue
-0:0 - 0:1         invalid_syntax
-0:0 - 0:1           incomplete_escape `\\`
-0:1 - 1:0       line_ending
-0:1 - 0:3         `\r\n`
-
 ==================
-EOF CR leaves an unfinished escape incomplete
-:cst
+Unfinished escape before EOF carriage return is rejected
+:error
 ==================
 a\
 ---
 
-0:0 - 0:3   document
-0:0 - 0:3     pattern
-0:0 - 0:1       glob_literal `a`
-0:1 - 0:2       issue: syntax_issue
-0:1 - 0:2         incomplete_syntax
-0:1 - 0:2           incomplete_escape `\\`
-0:2 - 0:3       trailing_carriage_return `\r`
-
 ==================
 Escape at EOF
-:cst
+:error
 ==================
 foo\
 ---
-
-0:0 - 0:4   document
-0:0 - 0:4     pattern
-0:0 - 0:3       glob_literal `foo`
-0:3 - 0:4       issue: syntax_issue
-0:3 - 0:4         incomplete_syntax
-0:3 - 0:4           incomplete_escape `\\`

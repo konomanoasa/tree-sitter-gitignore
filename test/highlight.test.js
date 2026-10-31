@@ -268,27 +268,6 @@ const finalCaptureCases = [
     ],
   },
   {
-    name: "unfinished set preserves its opening bracket",
-    source: "[abc",
-    captures: [
-      [0, 1, "punctuation.bracket"],
-      [1, 4, "string.special.path"],
-    ],
-  },
-  {
-    name: "incomplete escape is uncolored",
-    source: "a\\",
-    captures: [[0, 1, "string.special.path"]],
-  },
-  {
-    name: "invalid escape preserves the next line",
-    source: "a\\\nb",
-    captures: [
-      [0, 1, "string.special.path"],
-      [3, 4, "string.special.path"],
-    ],
-  },
-  {
     name: "character class",
     source: "[[:digit:]]",
     captures: [

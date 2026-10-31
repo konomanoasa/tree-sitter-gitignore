@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { issues } from "./support/cst.js";
+import { hasError } from "./support/cst.js";
 import {
   applyEdits,
   assertEditHistory,
-  assertIncrementalEqualsFresh,
+  assertEditMatchesContract,
+  parse,
 } from "./support/parser.js";
 
 const editCases = [
@@ -177,14 +178,7 @@ const encodingHistories = [
       { byte: 2, deleteBytes: 2, insert: "" },
       { byte: 1, deleteBytes: 3, insert: "x" },
     ],
-    expected: [
-      [
-        ["invalid_syntax", "invalid_encoding", 1, 2],
-        ["invalid_syntax", "invalid_encoding", 4, 6],
-      ],
-      [["invalid_syntax", "invalid_encoding", 1, 4]],
-      [],
-    ],
+    expectedError: [true, true, false],
   },
   {
     name: "close and reopen a set between undecodable bytes",
@@ -193,34 +187,24 @@ const encodingHistories = [
       { byte: 2, deleteBytes: 0, insert: "]" },
       { byte: 2, deleteBytes: 1, insert: "" },
     ],
-    expected: [
-      [
-        ["invalid_syntax", "invalid_encoding", 1, 2],
-        ["invalid_syntax", "invalid_encoding", 3, 5],
-      ],
-      [
-        ["invalid_syntax", "invalid_encoding", 1, 4],
-        ["incomplete_syntax", "missing_set_close", 4, 4],
-      ],
-    ],
+    expectedError: [true, true],
   },
   {
     name: "repair a decode failure after a set backslash",
     source: Buffer.from([91, 92, 255, 254, 93]),
     edits: [{ byte: 2, deleteBytes: 2, insert: "a" }],
-    expected: [[]],
+    expectedError: [false],
   },
 ];
-for (const { name, source, edits, expected } of encodingHistories) {
+for (const { name, source, edits, expectedError } of encodingHistories) {
   test(`gitignore: ${name}`, () => {
     for (let length = 1; length <= edits.length; length++) {
       const history = edits.slice(0, length);
-      const incremental = assertIncrementalEqualsFresh(
-        source,
-        history,
-        applyEdits(source, history),
+      assertEditMatchesContract(source, history, applyEdits(source, history));
+      assert.equal(
+        hasError(parse(applyEdits(source, history))),
+        expectedError[length - 1],
       );
-      assert.deepEqual(issues(incremental), expected[length - 1]);
     }
   });
 }
@@ -231,7 +215,7 @@ for (const [owner, prefix, suffix] of [
   ["set", "[a", "]"],
   ["ignored suffix", "a\u0000", "b"],
 ]) {
-  test(`gitignore: splitting the character after a decoding failure merges the issue in ${owner}`, () => {
+  test(`gitignore: splitting and repairing UTF-8 characters in ${owner}`, () => {
     const source = Buffer.concat([
       Buffer.from(prefix),
       Buffer.from([255]),
@@ -240,21 +224,17 @@ for (const [owner, prefix, suffix] of [
     const edits = [
       { byte: Buffer.byteLength(prefix) + 2, deleteBytes: 1, insert: "" },
     ];
-    const incremental = assertIncrementalEqualsFresh(
-      source,
-      edits,
-      applyEdits(source, edits),
-    );
-    assert.deepEqual(
-      incremental
-        .filter(({ kind }) => kind === "syntax_issue")
-        .map(({ start, end }) => [start, end]),
-      [[Buffer.byteLength(prefix), Buffer.byteLength(prefix) + 2]],
-    );
+    edits.push({
+      byte: Buffer.byteLength(prefix),
+      deleteBytes: 2,
+      insert: "é",
+    });
+    assertEditHistory({ source, edits });
+    assert.equal(hasError(parse(applyEdits(source, edits))), false);
   });
 }
 
-test("gitignore: fixed-seed generated histories preserve source structure and issue ranges", () => {
+test("gitignore: fixed-seed generated histories preserve fresh determinism and repaired CST", () => {
   const seed = 0x731dac9;
   const historyCount = 120;
   const editsPerHistory = 4;
@@ -290,7 +270,13 @@ test("gitignore: fixed-seed generated histories preserve source structure and is
       };
       edits.push(edit);
       bytes = applyEdits(bytes, [edit]);
-      assertIncrementalEqualsFresh(source, edits, bytes);
+      assertEditMatchesContract(source, edits, bytes);
     }
+    const repaired = "!**/[a-z]\n";
+    edits.push({ byte: 0, deleteBytes: bytes.length, insert: repaired });
+    assert.equal(
+      hasError(assertEditMatchesContract(source, edits, repaired)),
+      false,
+    );
   }
 });

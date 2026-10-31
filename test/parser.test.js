@@ -4,10 +4,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { issues } from "./support/cst.js";
+import { hasError } from "./support/cst.js";
 import {
   applyEdits,
-  assertIncrementalEqualsFresh,
+  assertEditMatchesContract,
   parse,
 } from "./support/parser.js";
 
@@ -193,43 +193,43 @@ const largeInputCases = [
   [
     "many unmatched open brackets",
     "[".repeat(largeInputCounts.unmatchedBrackets),
-    1,
+    true,
   ],
   [
     "many incomplete class prefixes",
     `${"[:".repeat(largeInputCounts.incompleteClassPrefixes)}]`,
-    1,
+    true,
   ],
   [
     "many complete character sets",
     "[a-z]".repeat(largeInputCounts.characterSets),
-    0,
+    false,
   ],
   [
     "many unmatched brackets before a class",
     `${"[".repeat(largeInputCounts.unmatchedBrackets)}[:x]`,
-    0,
+    false,
   ],
   [
     "many unclosed brackets holding classes",
     "[[:x:]".repeat(largeInputCounts.unclosedClassPrefixes),
-    1,
+    true,
   ],
   [
     "many independently invalid escapes",
     "a\\\n".repeat(largeInputCounts.invalidEscapes),
-    largeInputCounts.invalidEscapes,
+    true,
   ],
   [
     "many mixed named item prefixes",
     `${"[:[.[=".repeat(largeInputCounts.mixedItemPrefixes)}]`,
-    0,
+    false,
   ],
 ];
-for (const [name, source, expectedIssues] of largeInputCases) {
+for (const [name, source, expectedError] of largeInputCases) {
   test(`gitignore: large input: ${name}`, () => {
     const tree = parse(source);
-    assert.equal(issues(tree).length, expectedIssues);
+    assert.equal(hasError(tree), expectedError);
   });
 }
 
@@ -289,12 +289,12 @@ for (const { name, source, edits, expected } of escapedSeparatorHistories) {
   test(`gitignore: ${name}`, () => {
     for (let length = 1; length <= edits.length; length++) {
       const history = edits.slice(0, length);
-      const incremental = assertIncrementalEqualsFresh(
+      const incremental = assertEditMatchesContract(
         source,
         history,
         applyEdits(source, history),
       );
-      assert.deepEqual(issues(incremental), []);
+      assert.equal(hasError(incremental), false);
       assert.deepEqual(
         incremental
           .filter(
