@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { hasError } from "./support/cst.js";
+import { issues } from "./support/cst.js";
 import {
   applyEdits,
   assertEditHistory,
-  assertEditMatchesContract,
+  assertIncrementalEqualsFresh,
   parse,
 } from "./support/parser.js";
 
@@ -178,7 +178,14 @@ const encodingHistories = [
       { byte: 2, deleteBytes: 2, insert: "" },
       { byte: 1, deleteBytes: 3, insert: "x" },
     ],
-    expectedError: [true, true, false],
+    expected: [
+      [
+        ["invalid_syntax", "invalid_encoding", 1, 2],
+        ["invalid_syntax", "invalid_encoding", 4, 6],
+      ],
+      [["invalid_syntax", "invalid_encoding", 1, 4]],
+      [],
+    ],
   },
   {
     name: "close and reopen a set between undecodable bytes",
@@ -187,24 +194,34 @@ const encodingHistories = [
       { byte: 2, deleteBytes: 0, insert: "]" },
       { byte: 2, deleteBytes: 1, insert: "" },
     ],
-    expectedError: [true, true],
+    expected: [
+      [
+        ["invalid_syntax", "invalid_encoding", 1, 2],
+        ["invalid_syntax", "invalid_encoding", 3, 5],
+      ],
+      [
+        ["invalid_syntax", "invalid_encoding", 1, 4],
+        ["incomplete_syntax", "missing_set_close", 4, 4],
+      ],
+    ],
   },
   {
     name: "repair a decode failure after a set backslash",
     source: Buffer.from([91, 92, 255, 254, 93]),
     edits: [{ byte: 2, deleteBytes: 2, insert: "a" }],
-    expectedError: [false],
+    expected: [[]],
   },
 ];
-for (const { name, source, edits, expectedError } of encodingHistories) {
+for (const { name, source, edits, expected } of encodingHistories) {
   test(`gitignore: ${name}`, () => {
     for (let length = 1; length <= edits.length; length++) {
       const history = edits.slice(0, length);
-      assertEditMatchesContract(source, history, applyEdits(source, history));
-      assert.equal(
-        hasError(parse(applyEdits(source, history))),
-        expectedError[length - 1],
+      const incremental = assertIncrementalEqualsFresh(
+        source,
+        history,
+        applyEdits(source, history),
       );
+      assert.deepEqual(issues(incremental), expected[length - 1]);
     }
   });
 }
@@ -215,7 +232,7 @@ for (const [owner, prefix, suffix] of [
   ["set", "[a", "]"],
   ["ignored suffix", "a\u0000", "b"],
 ]) {
-  test(`gitignore: splitting and repairing UTF-8 characters in ${owner}`, () => {
+  test(`gitignore: splitting the character after a decoding failure merges the issue in ${owner}`, () => {
     const source = Buffer.concat([
       Buffer.from(prefix),
       Buffer.from([255]),
@@ -224,19 +241,23 @@ for (const [owner, prefix, suffix] of [
     const edits = [
       { byte: Buffer.byteLength(prefix) + 2, deleteBytes: 1, insert: "" },
     ];
-    edits.push({
-      byte: Buffer.byteLength(prefix),
-      deleteBytes: 2,
-      insert: "é",
-    });
-    assertEditHistory({ source, edits });
-    assert.equal(hasError(parse(applyEdits(source, edits))), false);
+    const incremental = assertIncrementalEqualsFresh(
+      source,
+      edits,
+      applyEdits(source, edits),
+    );
+    assert.deepEqual(
+      incremental
+        .filter(({ kind }) => kind === "syntax_issue")
+        .map(({ start, end }) => [start, end]),
+      [[Buffer.byteLength(prefix), Buffer.byteLength(prefix) + 2]],
+    );
   });
 }
 
-test("gitignore: fixed-seed generated histories preserve fresh determinism and repaired CST", () => {
+test("gitignore: fixed-seed generated histories preserve source structure and issue ranges", () => {
   const seed = 0x731dac9;
-  const historyCount = 120;
+  const historiesPerInput = 2;
   const editsPerHistory = 4;
   const maxDeletedBytes = 3;
   const lcgMultiplier = 1_664_525;
@@ -257,6 +278,7 @@ test("gitignore: fixed-seed generated histories preserve fresh determinism and r
     "[[::]]\r",
     "[a\0]ignored\nnext",
   ];
+  const historyCount = seeds.length * historiesPerInput;
   for (let sample = 0; sample < historyCount; sample++) {
     const source = seeds[sample % seeds.length];
     let bytes = Buffer.from(source);
@@ -270,13 +292,76 @@ test("gitignore: fixed-seed generated histories preserve fresh determinism and r
       };
       edits.push(edit);
       bytes = applyEdits(bytes, [edit]);
-      assertEditMatchesContract(source, edits, bytes);
     }
-    const repaired = "!**/[a-z]\n";
-    edits.push({ byte: 0, deleteBytes: bytes.length, insert: repaired });
-    assert.equal(
-      hasError(assertEditMatchesContract(source, edits, repaired)),
-      false,
-    );
+    assertEditHistory({ source, edits });
   }
 });
+
+for (const newline of ["\n", "\r\n"]) {
+  const tail = "tail1\ntail2\n".replaceAll("\n", newline);
+  for (const prefix of ["", "before\n".replaceAll("\n", newline)]) {
+    for (const line of ["[abc]", "a\\*b", "!dir/**", "[[:digit:]]"]) {
+      test(`gitignore: truncating ${JSON.stringify(line)} before ${JSON.stringify(newline)} preserves adjacent entries with prefix ${JSON.stringify(prefix)}`, () => {
+        const initial = prefix + line + newline + tail;
+        const original = parse(initial);
+        for (let cut = 0; cut < line.length; cut++) {
+          const source = prefix + line.slice(0, cut) + newline + tail;
+          const edits = [
+            {
+              byte: prefix.length + cut,
+              deleteBytes: line.length - cut,
+              insert: "",
+            },
+          ];
+          const tree = assertIncrementalEqualsFresh(initial, edits, source);
+          const boundary = prefix.length + cut + newline.length;
+          if (prefix) {
+            assert.deepEqual(
+              tree
+                .filter(
+                  (node) => node.parent === 0 && node.start < prefix.length,
+                )
+                .map(({ kind, start, end }) => [kind, start, end]),
+              [["pattern", 0, prefix.length]],
+              source,
+            );
+          }
+          assert.deepEqual(
+            tree
+              .filter((node) => node.parent === 0 && node.start >= boundary)
+              .map(({ kind, start, end }) => [
+                kind,
+                start - boundary,
+                end - boundary,
+              ]),
+            [
+              ["pattern", 0, 5 + newline.length],
+              ["pattern", 5 + newline.length, tail.length],
+            ],
+            source,
+          );
+          for (const node of tree.filter(
+            (node) => node.kind === "syntax_issue",
+          )) {
+            assert.ok(
+              node.start >= prefix.length && node.end <= boundary,
+              source,
+            );
+          }
+          assert.deepEqual(
+            parse(initial, [
+              ...edits,
+              {
+                byte: prefix.length + cut,
+                deleteBytes: 0,
+                insert: line.slice(cut),
+              },
+            ]),
+            original,
+            source,
+          );
+        }
+      });
+    }
+  }
+}

@@ -192,6 +192,7 @@ static void test_restored_comment_state_preserves_token_ranges(void) {
     {COMMENT_TEXT, 1, 2},
     {IGNORED_START, 2, 2},
     {IGNORED_TEXT, 2, 3},
+    {END_OF_FILE, 3, 3},
   };
   const Scanner scanner = scan_restored_tokens(
     input,
@@ -199,12 +200,13 @@ static void test_restored_comment_state_preserves_token_ranges(void) {
     cases,
     sizeof(cases) / sizeof(cases[0])
   );
-  assert(scanner.position == length);
+  const Scanner cleared = {0};
+  assert(memcmp(&scanner, &cleared, sizeof(scanner)) == 0);
 }
 
 static void test_restored_glob_state_preserves_token_ranges(void) {
   const int32_t input[] =
-    {'[', '^', 'a', ']', '[', '[', ':', 'd', ':', ']', ']'};
+    {'[', '^', 'a', ']', '[', '[', ':', 'd', ':', ']', ']', '['};
   const size_t length = sizeof(input) / sizeof(input[0]);
   const struct TokenCase cases[] = {
     {PATTERN_START, 0, 0},
@@ -223,7 +225,10 @@ static void test_restored_glob_state_preserves_token_ranges(void) {
     {CLASS_CLOSE, 8, 9},
     {COMPOUND_CLOSE, 9, 10},
     {SET_CLOSE, 10, 11},
-    {END_OF_FILE, 11, 11},
+    {GLOB_START, 11, 11},
+    {SET_OPEN, 11, 12},
+    {INCOMPLETE_SET_CLOSE, 12, 12},
+    {END_OF_FILE, 12, 12},
   };
   const Scanner scanner = scan_restored_tokens(
     input,
@@ -231,66 +236,8 @@ static void test_restored_glob_state_preserves_token_ranges(void) {
     cases,
     sizeof(cases) / sizeof(cases[0])
   );
-  assert(scanner.position == length && scanner.content_end == length);
-}
-
-static void test_unfinished_and_undecodable_tokens_preserve_state(void) {
-  const int32_t set[] = {'[', 'a'};
-  const struct TokenCase tokens[] = {
-    {PATTERN_START, 0, 0},
-    {GLOB_START, 0, 0},
-    {SET_OPEN, 0, 1},
-    {SET_ITEM_START, 1, 1},
-    {SET_TEXT, 1, 2},
-  };
-  Scanner scanner = scan_restored_tokens(set, 2, tokens, 5);
-  const Scanner expected = scanner;
-  bool valid[ERROR_SENTINEL + 1] = {false};
-  valid[SET_CLOSE] = true;
-  struct MockLexer mock;
-  init_mock_lexer(&mock, NULL, 0);
-  assert(
-    !tree_sitter_gitignore_external_scanner_scan(&scanner, &mock.lexer, valid)
-  );
-  assert(memcmp(&scanner, &expected, sizeof(scanner)) == 0);
-
-  const int32_t inputs[][3] =
-    {{'\\', 0, 0}, {'\\', -1, 0}, {'#', 'a', -1}, {'a', 0, -1}};
-  const size_t lengths[] = {1, 2, 3, 3};
-  for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
-    memset(&scanner, 0, sizeof(scanner));
-    scanner.content_end = scanner.line_end = lengths[i];
-    scanner.ignored_start = i == 3 ? 1 : NONE;
-    scanner.kind = i == 2 ? COMMENT_START : PATTERN_START;
-    scanner.position = i >= 2 ? 1 : 0;
-    const Scanner before = scanner;
-    memset(valid, 0, sizeof(valid));
-    valid[i == 2 ? COMMENT_TEXT : i == 3 ? IGNORED_TEXT : GLOB_START] = true;
-    init_mock_lexer(
-      &mock,
-      inputs[i] + scanner.position,
-      lengths[i] - scanner.position
-    );
-    assert(
-      !tree_sitter_gitignore_external_scanner_scan(&scanner, &mock.lexer, valid)
-    );
-    assert(memcmp(&scanner, &before, sizeof(scanner)) == 0);
-  }
-}
-
-static void test_null_payload_is_safe_after_allocation_failure(void) {
-  const int32_t input[] = {'a'};
-  struct MockLexer mock;
-  init_mock_lexer(&mock, input, 1);
-  bool valid[ERROR_SENTINEL + 1] = {false};
-  valid[PATTERN_START] = true;
-  char buffer[TREE_SITTER_SERIALIZATION_BUFFER_SIZE];
-  assert(tree_sitter_gitignore_external_scanner_serialize(NULL, buffer) == 0);
-  tree_sitter_gitignore_external_scanner_deserialize(NULL, NULL, 0);
-  assert(
-    !tree_sitter_gitignore_external_scanner_scan(NULL, &mock.lexer, valid)
-  );
-  tree_sitter_gitignore_external_scanner_destroy(NULL);
+  const Scanner cleared = {0};
+  assert(memcmp(&scanner, &cleared, sizeof(scanner)) == 0);
 }
 
 #ifdef TREE_SITTER_REUSE_ALLOCATOR
@@ -307,13 +254,70 @@ static void test_reuse_allocator_failure_and_cleanup(void) {
 }
 #endif
 
+static void test_null_payload_is_safe_after_allocation_failure(void) {
+  const int32_t input[] = {'a'};
+  struct MockLexer mock;
+  init_mock_lexer(&mock, input, 1);
+  bool valid[ERROR_SENTINEL + 1] = {false};
+  valid[PATTERN_START] = true;
+  char buffer[TREE_SITTER_SERIALIZATION_BUFFER_SIZE];
+  assert(tree_sitter_gitignore_external_scanner_serialize(NULL, buffer) == 0);
+  tree_sitter_gitignore_external_scanner_deserialize(NULL, NULL, 0);
+  assert(
+    !tree_sitter_gitignore_external_scanner_scan(NULL, &mock.lexer, valid)
+  );
+  tree_sitter_gitignore_external_scanner_destroy(NULL);
+}
+
+static void test_line_end_discards_state_after_missing_set_close(void) {
+  const int32_t input[][4] =
+    {{'[', 'a'}, {'[', 'a', '\n'}, {'[', 'a', '\r', '\n'}};
+  const size_t lengths[] = {2, 3, 4};
+  for (size_t i = 0; i < 3; i++) {
+    const struct TokenCase cases[] = {
+      {PATTERN_START, 0, 0},
+      {GLOB_START, 0, 0},
+      {SET_OPEN, 0, 1},
+      {SET_ITEM_START, 1, 1},
+      {SET_TEXT, 1, 2},
+      {i == 0 ? INCOMPLETE_SET_CLOSE : MISSING_SET_CLOSE, 2, 2},
+      {i == 0 ? END_OF_FILE : LINE_ENDING, 2, lengths[i]},
+    };
+    const Scanner scanner = scan_restored_tokens(
+      input[i],
+      lengths[i],
+      cases,
+      sizeof(cases) / sizeof(cases[0])
+    );
+    const Scanner cleared = {0};
+    assert(memcmp(&scanner, &cleared, sizeof(scanner)) == 0);
+  }
+}
+
+static void
+test_final_carriage_return_is_retained_before_state_is_cleared(void) {
+  const int32_t input[] = {'*', '\r'};
+  const struct TokenCase cases[] = {
+    {PATTERN_START, 0, 0},
+    {GLOB_START, 0, 0},
+    {WILDCARD, 0, 1},
+    {TRAILING_CARRIAGE_RETURN, 1, 2},
+    {END_OF_FILE, 2, 2},
+  };
+  const Scanner scanner =
+    scan_restored_tokens(input, 2, cases, sizeof(cases) / sizeof(cases[0]));
+  const Scanner cleared = {0};
+  assert(memcmp(&scanner, &cleared, sizeof(scanner)) == 0);
+}
+
 int main(void) {
+  test_line_end_discards_state_after_missing_set_close();
+  test_final_carriage_return_is_retained_before_state_is_cleared();
+  test_null_payload_is_safe_after_allocation_failure();
   test_lifecycle_and_serialization_round_trip();
   test_disabled_and_recovery_scans_preserve_state();
   test_restored_comment_state_preserves_token_ranges();
   test_restored_glob_state_preserves_token_ranges();
-  test_unfinished_and_undecodable_tokens_preserve_state();
-  test_null_payload_is_safe_after_allocation_failure();
 #ifdef TREE_SITTER_REUSE_ALLOCATOR
   test_reuse_allocator_failure_and_cleanup();
 #endif

@@ -1,3 +1,29 @@
+const missingKinds = (name) => [
+  [`missing_${name}`, "invalid_syntax", `missing_${name}`],
+  [`incomplete_${name}`, "incomplete_syntax", `missing_${name}`],
+];
+const issueKinds = [
+  ...missingKinds("set_close"),
+  ["invalid_encoding", "invalid_syntax", "invalid_encoding"],
+  ["ended_escape", "invalid_syntax", "incomplete_escape"],
+  ["incomplete_escape", "incomplete_syntax", "incomplete_escape"],
+];
+const issueRules = Object.fromEntries(
+  issueKinds.flatMap(([token, outcome, reason]) => [
+    [`_${token}_outcome`, ($) => alias($[`_${token}`], $[reason])],
+    [`_${token}_issue`, ($) => alias($[`_${token}_outcome`], $[outcome])],
+  ]),
+);
+const issue = ($, name) =>
+  field("issue", alias($[`_${name}_issue`], $.syntax_issue));
+const issues = ($, ...names) => names.map((name) => issue($, name));
+const missing = ($, name) =>
+  choice(issue($, `missing_${name}`), issue($, `incomplete_${name}`));
+const globIssues = ($) => [
+  ...issues($, "invalid_encoding", "ended_escape", "incomplete_escape"),
+  seq($._escape_prefix, issue($, "invalid_encoding")),
+];
+
 export default grammar({
   name: "gitignore",
   externals: ($) => [
@@ -5,6 +31,7 @@ export default grammar({
     $._comment_start,
     $._pattern_start,
     $._eof,
+    $.line_ending,
     $._glob_start,
     $._set_item_start,
     $.comment_marker,
@@ -16,6 +43,7 @@ export default grammar({
     $.single_character,
     $.path_separator,
     $.escape,
+    $._escape_prefix,
     $.set_open,
     $.set_negation,
     $.set_text,
@@ -32,23 +60,28 @@ export default grammar({
     $.trailing_carriage_return,
     $._ignored_start,
     $.ignored_text,
+    ...issueKinds.map(([name]) => $[`_${name}`]),
     $._error_sentinel,
   ],
-  extras: () => [],
+  extras: ($) => [$._unmatchable],
   rules: {
     document: ($) => repeat(choice($.blank_line, $.comment, $.pattern)),
-    line_ending: () => /\r?\n/,
+    _unmatchable: () => token(seq(/[\s\S]/, /[^\s\S]/)),
     _line_end: ($) =>
       choice($.line_ending, seq(optional($.trailing_carriage_return), $._eof)),
     _end: ($) => seq(optional($.trailing_space), $._suffix),
     _suffix: ($) => seq(optional($.ignored_suffix), $._line_end),
-    ignored_suffix: ($) => seq($._ignored_start, $.ignored_text),
+    ignored_suffix: ($) =>
+      seq(
+        $._ignored_start,
+        repeat1(choice($.ignored_text, issue($, "invalid_encoding"))),
+      ),
     blank_line: ($) => seq($._blank_start, $._end),
     comment: ($) =>
       seq(
         $._comment_start,
         $.comment_marker,
-        optional($.comment_text),
+        repeat(choice($.comment_text, issue($, "invalid_encoding"))),
         $._suffix,
       ),
     pattern: ($) =>
@@ -67,6 +100,7 @@ export default grammar({
                 $.path_separator,
                 $.escape,
                 $.character_set,
+                ...globIssues($),
               ),
             ),
           ),
@@ -78,13 +112,19 @@ export default grammar({
       seq(
         field("opening", $.set_open),
         optional(field("negation", $.set_negation)),
-        repeat($._set_item),
-        field("closing", $.set_close),
-      ),
-    _set_item: ($) =>
-      seq(
-        $._set_item_start,
-        choice($.set_text, $.escape, $.character_range, $.character_class),
+        repeat(
+          seq(
+            $._set_item_start,
+            choice(
+              $.set_text,
+              $.escape,
+              $.character_range,
+              $.character_class,
+              ...globIssues($),
+            ),
+          ),
+        ),
+        choice(field("closing", $.set_close), missing($, "set_close")),
       ),
     character_range: ($) =>
       seq(
@@ -98,9 +138,12 @@ export default grammar({
       seq(
         alias($._compound_open, "["),
         alias($._class_open, ":"),
-        optional(field("name", $.class_name)),
+        repeat(
+          choice(field("name", $.class_name), issue($, "invalid_encoding")),
+        ),
         alias($._class_close, ":"),
         alias($._compound_close, "]"),
       ),
+    ...issueRules,
   },
 });
