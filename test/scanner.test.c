@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../src/scanner.c"
+#include "../src/tree_sitter/parser.h"
 
 #ifdef TREE_SITTER_REUSE_ALLOCATOR
 static size_t reuse_live_allocations;
@@ -41,12 +41,6 @@ struct MockLexer {
   size_t length;
   size_t offset;
   size_t mark;
-};
-
-struct TokenCase {
-  enum Token token;
-  size_t start;
-  size_t end;
 };
 
 static void mock_advance(TSLexer *lexer, bool skip) {
@@ -85,6 +79,14 @@ init_mock_lexer(struct MockLexer *mock, const int32_t *input, size_t length) {
     .mark = SIZE_MAX,
   };
 }
+
+#include "../src/scanner.c"
+
+struct TokenCase {
+  enum Token token;
+  size_t start;
+  size_t end;
+};
 
 static Scanner scan_restored_tokens(
   const int32_t *input,

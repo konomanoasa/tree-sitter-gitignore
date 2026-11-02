@@ -104,7 +104,6 @@ static void advance(Scanner *s, TSLexer *lexer) {
   s->position++;
 }
 
-// Include the next decoded character so edits invalidate the run.
 static bool invalid_run(Scanner *s, TSLexer *lexer, const bool *valid) {
   do advance(s, lexer);
   while (!lexer->eof(lexer) && lexer->lookahead == DECODE_ERROR);
@@ -274,7 +273,6 @@ static bool endpoint(Item a) {
   return a.kind == SET_TEXT || a.kind == ESCAPE;
 }
 
-// Advance past whole characters so edits inside them invalidate lookahead.
 static bool prepare_glob(Scanner *s, TSLexer *lexer, const bool *valid) {
   Cursor c = {lexer, s->position};
   const uint32_t start = s->position;
