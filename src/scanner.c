@@ -292,12 +292,12 @@ static bool prepare_glob(Scanner *s, TSLexer *lexer, const bool *valid) {
     separator = s->next == ESCAPE && escaped == '/';
   } else if (first == '*') {
     while (peek(&c, s->content_end, '*')) step(&c);
-    const bool pair = c.position - start == 2 && s->component_start;
+    const bool multiple = c.position - start >= 2 && s->component_start;
     const bool tail = c.position == s->content_end && s->after_separator;
     s->next_end = c.position;
     if (peek(&c, s->content_end, '\\')) step(&c);
     const bool slash = peek(&c, s->content_end, '/');
-    s->next = pair && (slash || tail) ? RECURSIVE_WILDCARD : WILDCARD;
+    s->next = multiple && (slash || tail) ? RECURSIVE_WILDCARD : WILDCARD;
   } else if (first == '[') {
     s->next = SET_OPEN;
     find_set(s, &c);

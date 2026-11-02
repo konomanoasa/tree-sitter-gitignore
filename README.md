@@ -6,7 +6,7 @@
 [![PyPI](https://img.shields.io/pypi/v/konomanoasa-tree-sitter-gitignore)](https://pypi.org/project/konomanoasa-tree-sitter-gitignore/)
 
 [Tree-sitter](https://tree-sitter.github.io/tree-sitter/) grammar for
-Git ignore files 2.55.0.
+Git ignore files 2.56.0.
 
 ## Installation
 
@@ -24,7 +24,7 @@ npm test
 
 ## Specification
 
-[Git 2.55.0 gitignore manual](https://git-scm.com/docs/gitignore/2.55.0)
+[Git 2.56.0 gitignore manual](https://git-scm.com/docs/gitignore/2.56.0)
 
 ## License
 

@@ -110,7 +110,7 @@ const escapedSeparatorHistories = [
       { byte: 3, deleteBytes: 0, insert: "*" },
       { byte: 3, deleteBytes: 1, insert: "" },
     ],
-    expected: ["wildcard", "recursive_wildcard"],
+    expected: ["recursive_wildcard", "recursive_wildcard"],
   },
 ];
 for (const { name, source, edits, expected } of escapedSeparatorHistories) {

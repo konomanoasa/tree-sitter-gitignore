@@ -23,7 +23,7 @@ x\/***/b
   (pattern (glob_literal) (path_separator) (recursive_wildcard) (escape) (glob_literal) (line_ending))
   (pattern (recursive_wildcard) (escape) (glob_literal) (line_ending))
   (pattern (glob_literal) (escape) (recursive_wildcard) (line_ending))
-  (pattern (glob_literal) (escape) (wildcard) (path_separator) (glob_literal)))
+  (pattern (glob_literal) (escape) (recursive_wildcard) (path_separator) (glob_literal)))
 
 ==================
 Escaped slash before a recursive wildcard
@@ -131,7 +131,7 @@ x/**\\/b
 0:7 - 0:8       glob_literal `b`
 
 ==================
-Escaped slash does not make three asterisks recursive
+Escaped slash makes three asterisks recursive
 :cst
 ==================
 x\/***/b
@@ -141,7 +141,7 @@ x\/***/b
 0:0 - 0:8     pattern
 0:0 - 0:1       glob_literal `x`
 0:1 - 0:3       escape `\\/`
-0:3 - 0:6       wildcard `***`
+0:3 - 0:6       recursive_wildcard `***`
 0:6 - 0:7       path_separator `/`
 0:7 - 0:8       glob_literal `b`
 
@@ -163,7 +163,7 @@ Slash inside a set does not start a component
 0:7 - 0:8       glob_literal `b`
 
 ==================
-Three asterisks between separators follow the manual
+Three asterisks between separators span directories
 :cst
 ==================
 a/***/b
@@ -173,7 +173,7 @@ a/***/b
 0:0 - 0:7     pattern
 0:0 - 0:1       glob_literal `a`
 0:1 - 0:2       path_separator `/`
-0:2 - 0:5       wildcard `***`
+0:2 - 0:5       recursive_wildcard `***`
 0:5 - 0:6       path_separator `/`
 0:6 - 0:7       glob_literal `b`
 
@@ -242,7 +242,7 @@ Standalone double asterisk is ordinary
 0:0 - 0:2       wildcard `**`
 
 ==================
-Long asterisk run is ordinary
+Long asterisk run before slash is recursive
 :cst
 ==================
 ***/
@@ -250,7 +250,7 @@ Long asterisk run is ordinary
 
 0:0 - 0:4   document
 0:0 - 0:4     pattern
-0:0 - 0:3       wildcard `***`
+0:0 - 0:3       recursive_wildcard `***`
 0:3 - 0:4       path_separator `/`
 
 ==================
