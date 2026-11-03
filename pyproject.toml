@@ -1,6 +1,6 @@
 [project]
 name = "konomanoasa-tree-sitter-gitignore"
-version = "0.7.0"
+version = "0.7.1"
 description = "Tree-sitter grammar for gitignore."
 readme = "README.md"
 license = "MIT"
